@@ -1,0 +1,8 @@
+{
+  "1": "cuBLAS ref [non-HW]",
+  "2": "f32 acc (slow)",
+  "5": "f16 acc",
+  "10": "XOR swizzle",
+  "16": "cuBLAS-cfg 256x128x64 3-stage",
+  "18": "reg double-buf deep pipe (195.5)"
+}

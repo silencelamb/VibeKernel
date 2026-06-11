@@ -1,0 +1,3 @@
+- [GPU clock locked at 1155](gpu-clock-locked-1155.md) — A100 pinned to base 1155MHz; real fp16 peak ~256 not 312 TFLOPS; 194 TFLOPS = 76% efficiency
+- [GEMM fp16 bottleneck analysis](gemm-f16-bottleneck-analysis.md) — best=v7 ~194 (76%); pure-mma ceiling 246/96%; gap is cp.async/sync/wave-quant; lists every tuning axis already tried+failed (don't re-explore)
+- [Always check error not just TFLOPS](always-check-error-not-just-tflops.md) — a "faster" sweep result can be a silent race/correctness bug; reject err≳1e-3 for f32-acc

@@ -1,0 +1,14 @@
+{
+  "1":  {"t": "WMMA 128x128 baseline", "b": "WMMA 开销大、无流水"},
+  "2":  {"t": "cp.async double-buf + WMMA", "b": ""},
+  "3":  {"t": "mma.sync f32-acc (regress 103)", "b": "warp/scheduler 太少、mma 管线吃不满"},
+  "4":  {"t": "256x128 16warp f32-acc", "b": "算术强度/寄存器未拉满,仍 103"},
+  "5":  {"t": "ldmatrix.x4 + 64x64 warp + f16-acc", "b": ""},
+  "7":  {"t": "warp-frag double-buffer", "b": ""},
+  "8":  {"t": "big tile", "b": ""},
+  "14": {"t": "64x64 warp, 8w, 256x128 (176)", "b": "大 warp tile 降 MIO 压力"},
+  "28": {"t": "f32, 64x64, 128x256, 4-stage (195)", "b": "tensor 吞吐 bound"},
+  "33": {"t": "+ L2-swizzle rasterization (196.9 peak)", "b": "tensor-pipe 气泡;occupancy 锁 1 blk/SM(寄存器墙)——非范式极限,同范式参考实现可达 ~214"},
+  "36": {"t": "config variant", "b": ""},
+  "40": {"t": "config variant (regress)", "b": ""}
+}

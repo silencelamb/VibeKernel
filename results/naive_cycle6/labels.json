@@ -1,0 +1,12 @@
+{
+  "1": "wmma (baseline)",
+  "4": "XOR swizzle",
+  "5": "cp.async pipeline",
+  "8": "4-stage",
+  "13": "f16-acc start",
+  "14": "fp32 peak 203",
+  "18": "256x128",
+  "20": "f16-acc",
+  "22": "f16-acc BK64 (peak 208)",
+  "25": "no-volatile"
+}

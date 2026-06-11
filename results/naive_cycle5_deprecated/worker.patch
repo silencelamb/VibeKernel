@@ -1,0 +1,1922 @@
+diff --git a/task-1/src/matmul_f16/matmul_f16_v10_f32burst.cu b/task-1/src/matmul_f16/matmul_f16_v10_f32burst.cu
+new file mode 100644
+index 0000000..0ff66c0
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v10_f32burst.cu
+@@ -0,0 +1,233 @@
++#include <cuda_fp16.h>
++#include <cstdint>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v10
++{
++// Block / warp tiling
++constexpr int BM = 128, BN = 256, BK = 64;
++constexpr int WARPS_M = 2, WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;     // 8
++constexpr int NTHREADS = NWARPS * 32;          // 256
++constexpr int WARP_M = BM / WARPS_M;           // 64
++constexpr int WARP_N = BN / WARPS_N;           // 32
++constexpr int MFRAG = WARP_M / 16;             // 4  (m16 tiles)
++constexpr int NFRAG = WARP_N / 8;              // 4  (n8 tiles)
++constexpr int KSTEP = BK / 16;                 // 2  (k16 steps)
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                 // 40
++constexpr int LDB = BN + SKEW;                 // 136
++constexpr int STAGES = 3;
++constexpr int AS = BM * LDA;                    // halfs per A stage
++constexpr int BS = BK * LDB;                    // halfs per B stage
++
++__device__ __forceinline__ uint32_t smem_addr(const void* p)
++{
++    return static_cast<uint32_t>(__cvta_generic_to_shared(p));
++}
++__device__ __forceinline__ void cp_async16(void* d, const void* s)
++{
++    asm volatile("cp.async.cg.shared.global [%0],[%1],16;\n" ::"r"(smem_addr(d)),
++                 "l"(s)
++                 : "memory");
++}
++__device__ __forceinline__ void cp_commit()
++{
++    asm volatile("cp.async.commit_group;\n" ::: "memory");
++}
++template <int N>
++__device__ __forceinline__ void cp_wait()
++{
++    asm volatile("cp.async.wait_group %0;\n" ::"n"(N) : "memory");
++}
++__device__ __forceinline__ void ldm_x4(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void ldm_x4_trans(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void mma16816(float (&d)[4], const uint32_t (&a)[4],
++                                         const uint32_t (&b)[2])
++{
++    asm volatile(
++        "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
++        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
++        : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3])
++        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
++}
++
++__global__ void __launch_bounds__(NTHREADS, 1)
++    kernel(int M, int N, int K, const half* __restrict__ A,
++           const half* __restrict__ B, half* __restrict__ C)
++{
++    extern __shared__ half smem[];
++    half* As = smem;
++    half* Bs = smem + STAGES * AS;
++
++    const int blockRow = blockIdx.y * BM, blockCol = blockIdx.x * BN;
++    const int warpId = threadIdx.x >> 5;
++    const int lane = threadIdx.x & 31;
++    const int warpRow = (warpId / WARPS_N) * WARP_M;
++    const int warpCol = (warpId % WARPS_N) * WARP_N;
++    const int tid = threadIdx.x;
++    const int numK = K / BK;
++
++    auto load_tile = [&](int kt, int st) {
++        int k0 = kt * BK;
++        half* Asb = As + st * AS;
++        half* Bsb = Bs + st * BS;
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BK / 8);
++            int col8 = (idx % (BK / 8)) * 8;
++            cp_async16(&Asb[row * LDA + col8],
++                       &A[(blockRow + row) * K + k0 + col8]);
++        }
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);
++            int col8 = (idx % (BN / 8)) * 8;
++            cp_async16(&Bsb[row * LDB + col8],
++                       &B[(k0 + row) * N + blockCol + col8]);
++        }
++        cp_commit();
++    };
++
++    float acc[MFRAG][NFRAG][4];
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni)
++#pragma unroll
++            for (int t = 0; t < 4; ++t) acc[mi][ni][t] = 0.0f;
++
++#pragma unroll
++    for (int s = 0; s < STAGES - 1; ++s) {
++        if (s < numK)
++            load_tile(s, s);
++        else
++            cp_commit();
++    }
++
++    for (int kt = 0; kt < numK; ++kt) {
++        cp_wait<STAGES - 2>();
++        __syncthreads();
++
++        int cur = kt % STAGES;
++        half* Asb = As + cur * AS;
++        half* Bsb = Bs + cur * BS;
++
++        // Register double-buffered fragments: prefetch next k-step's
++        // ldmatrix while computing current k-step's mma (hides smem latency).
++        uint32_t aReg[2][MFRAG][4];
++        uint32_t bReg[2][NFRAG][2];
++
++        auto load_frags = [&](int buf, int kk) {
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi) {
++                int r = warpRow + mi * 16 + (lane % 16);
++                int c = kk + (lane / 16) * 8;
++                ldm_x4(aReg[buf][mi], smem_addr(&Asb[r * LDA + c]));
++            }
++#pragma unroll
++            for (int n2 = 0; n2 < NFRAG; n2 += 2) {
++                int r = kk + (lane % 16);
++                int c = warpCol + n2 * 8 + (lane / 16) * 8;
++                uint32_t t[4];
++                ldm_x4_trans(t, smem_addr(&Bsb[r * LDB + c]));
++                bReg[buf][n2][0] = t[0];
++                bReg[buf][n2][1] = t[1];
++                bReg[buf][n2 + 1][0] = t[2];
++                bReg[buf][n2 + 1][1] = t[3];
++            }
++        };
++
++        // Single-barrier multistage with register-DB; cp.async prefetch as a
++        // burst AFTER compute into the buffer freed at kt-1 (WAR safe: the
++        // start-of-iteration barrier separates it from kt-1's reads).
++        const int nxt = kt + STAGES - 1;
++
++        load_frags(0, 0);
++#pragma unroll
++        for (int ks = 0; ks < KSTEP; ++ks) {
++            int cb = ks & 1;
++            if (ks + 1 < KSTEP) load_frags((ks + 1) & 1, (ks + 1) * 16);
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    mma16816(acc[mi][ni], aReg[cb][mi], bReg[cb][ni]);
++        }
++        if (nxt < numK)
++            load_tile(nxt, nxt % STAGES);
++        else
++            cp_commit();
++    }
++
++    // Epilogue: stage C through shared (reuse As/Bs smem) -> coalesced global.
++    constexpr int LDC = BN + 8;
++    half* Cs = smem;
++    const int groupID = lane >> 2;
++    const int tidg = lane & 3;
++    __syncthreads();
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            int r = warpRow + mi * 16 + groupID;
++            int c = warpCol + ni * 8 + tidg * 2;
++            *reinterpret_cast<half2*>(&Cs[r * LDC + c]) =
++                __floats2half2_rn(acc[mi][ni][0], acc[mi][ni][1]);
++            *reinterpret_cast<half2*>(&Cs[(r + 8) * LDC + c]) =
++                __floats2half2_rn(acc[mi][ni][2], acc[mi][ni][3]);
++        }
++    }
++    __syncthreads();
++#pragma unroll
++    for (int i = 0; i < (BM * BN / 8) / NTHREADS; ++i) {
++        int idx = tid + i * NTHREADS;
++        int row = idx / (BN / 8);
++        int col8 = (idx % (BN / 8)) * 8;
++        *reinterpret_cast<float4*>(&C[(blockRow + row) * N + blockCol + col8]) =
++            *reinterpret_cast<float4*>(&Cs[row * LDC + col8]);
++    }
++}
++
++}  // namespace v10
++
++PLAYGROUND_MATMUL_DEC(float16_t, 10, m, n, k, A, B, C)
++{
++    constexpr int smemBytes =
++        v10::STAGES * (v10::AS + v10::BS) * int(sizeof(half));
++    static bool attrSet = false;
++    if (!attrSet) {
++        cudaFuncSetAttribute(v10::kernel,
++                             cudaFuncAttributeMaxDynamicSharedMemorySize,
++                             smemBytes);
++        cudaFuncSetAttribute(v10::kernel,
++                             cudaFuncAttributePreferredSharedMemoryCarveout,
++                             cudaSharedmemCarveoutMaxShared);
++        attrSet = true;
++    }
++    dim3 block(v10::NTHREADS);
++    dim3 grid(n / v10::BN, m / v10::BM);
++    v10::kernel<<<grid, block, smemBytes>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground
+diff --git a/task-1/src/matmul_f16/matmul_f16_v1_wmma.cu b/task-1/src/matmul_f16/matmul_f16_v1_wmma.cu
+new file mode 100644
+index 0000000..38df6a9
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v1_wmma.cu
+@@ -0,0 +1,135 @@
++#include <cuda_fp16.h>
++#include <mma.h>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v1
++{
++using namespace nvcuda;
++
++// ---- Block / warp tiling configuration --------------------------------------
++constexpr int BM = 128;   // block tile rows (M)
++constexpr int BN = 128;   // block tile cols (N)
++constexpr int BK = 32;    // block tile depth (K)
++constexpr int WARPS_M = 2;
++constexpr int WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;          // 8 warps
++constexpr int NTHREADS = NWARPS * 32;              // 256 threads
++constexpr int WARP_M = BM / WARPS_M;               // 64
++constexpr int WARP_N = BN / WARPS_N;               // 32
++constexpr int WMMA_M = 16, WMMA_N = 16, WMMA_K = 16;
++constexpr int MFRAG = WARP_M / WMMA_M;             // 4
++constexpr int NFRAG = WARP_N / WMMA_N;             // 2
++// Shared-memory skew (in halfs) to reduce bank conflicts.
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                     // 40
++constexpr int LDB = BN + SKEW;                     // 136
++
++__global__ void __launch_bounds__(NTHREADS)
++    wmma_kernel(int M, int N, int K, const half* __restrict__ A,
++                const half* __restrict__ B, half* __restrict__ C)
++{
++    __shared__ half As[BM * LDA];
++    __shared__ half Bs[BK * LDB];
++
++    const int blockRow = blockIdx.y * BM;
++    const int blockCol = blockIdx.x * BN;
++
++    const int warpId = threadIdx.x >> 5;
++    const int warpM = warpId / WARPS_N;   // 0..1
++    const int warpN = warpId % WARPS_N;   // 0..3
++    const int warpRow = warpM * WARP_M;   // row offset within block tile
++    const int warpCol = warpN * WARP_N;   // col offset within block tile
++
++    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float>
++        acc[MFRAG][NFRAG];
++#pragma unroll
++    for (int i = 0; i < MFRAG; ++i)
++#pragma unroll
++        for (int j = 0; j < NFRAG; ++j)
++            wmma::fill_fragment(acc[i][j], 0.0f);
++
++    const int tid = threadIdx.x;
++
++    for (int k0 = 0; k0 < K; k0 += BK) {
++        // ---- Load A tile [BM x BK] (row-major) into As --------------------
++        // 128*32 = 4096 halfs = 512 float4; 256 threads -> 2 float4 each.
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;          // float4 index
++            int row = idx / (BK / 8);              // BK/8 = 4 float4 per row
++            int col8 = (idx % (BK / 8)) * 8;       // half-column within tile
++            const float4* gptr = reinterpret_cast<const float4*>(
++                &A[(blockRow + row) * K + k0 + col8]);
++            *reinterpret_cast<float4*>(&As[row * LDA + col8]) = *gptr;
++        }
++        // ---- Load B tile [BK x BN] (row-major) into Bs --------------------
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);              // BN/8 = 16 float4 per row
++            int col8 = (idx % (BN / 8)) * 8;
++            const float4* gptr = reinterpret_cast<const float4*>(
++                &B[(k0 + row) * N + blockCol + col8]);
++            *reinterpret_cast<float4*>(&Bs[row * LDB + col8]) = *gptr;
++        }
++        __syncthreads();
++
++        // ---- Compute -----------------------------------------------------
++#pragma unroll
++        for (int kk = 0; kk < BK; kk += WMMA_K) {
++            wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half,
++                           wmma::row_major>
++                aFrag[MFRAG];
++            wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half,
++                           wmma::row_major>
++                bFrag[NFRAG];
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++                wmma::load_matrix_sync(
++                    aFrag[mi], &As[(warpRow + mi * WMMA_M) * LDA + kk], LDA);
++#pragma unroll
++            for (int ni = 0; ni < NFRAG; ++ni)
++                wmma::load_matrix_sync(
++                    bFrag[ni], &Bs[kk * LDB + warpCol + ni * WMMA_N], LDB);
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    wmma::mma_sync(acc[mi][ni], aFrag[mi], bFrag[ni],
++                                   acc[mi][ni]);
++        }
++        __syncthreads();
++    }
++
++    // ---- Epilogue: convert f32 acc -> half and store to C ----------------
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half>
++                cFrag;
++#pragma unroll
++            for (int t = 0; t < acc[mi][ni].num_elements; ++t)
++                cFrag.x[t] = __float2half(acc[mi][ni].x[t]);
++            int cRow = blockRow + warpRow + mi * WMMA_M;
++            int cCol = blockCol + warpCol + ni * WMMA_N;
++            wmma::store_matrix_sync(&C[cRow * N + cCol], cFrag, N,
++                                    wmma::mem_row_major);
++        }
++    }
++}
++
++}  // namespace v1
++
++PLAYGROUND_MATMUL_DEC(float16_t, 1, m, n, k, A, B, C)
++{
++    dim3 block(v1::NTHREADS);
++    dim3 grid(n / v1::BN, m / v1::BM);
++    v1::wmma_kernel<<<grid, block>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground
+diff --git a/task-1/src/matmul_f16/matmul_f16_v2_cpasync.cu b/task-1/src/matmul_f16/matmul_f16_v2_cpasync.cu
+new file mode 100644
+index 0000000..2d69eaf
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v2_cpasync.cu
+@@ -0,0 +1,162 @@
++#include <cuda_fp16.h>
++#include <mma.h>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v2
++{
++using namespace nvcuda;
++
++constexpr int BM = 128, BN = 128, BK = 32;
++constexpr int WARPS_M = 2, WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;
++constexpr int NTHREADS = NWARPS * 32;          // 256
++constexpr int WARP_M = BM / WARPS_M;           // 64
++constexpr int WARP_N = BN / WARPS_N;           // 32
++constexpr int WMMA_M = 16, WMMA_N = 16, WMMA_K = 16;
++constexpr int MFRAG = WARP_M / WMMA_M;         // 4
++constexpr int NFRAG = WARP_N / WMMA_N;         // 2
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                 // 40
++constexpr int LDB = BN + SKEW;                 // 136
++constexpr int STAGES = 3;
++constexpr int AS = BM * LDA;                    // halfs per A stage
++constexpr int BS = BK * LDB;                    // halfs per B stage
++
++__device__ __forceinline__ uint32_t smem_addr(const void* p)
++{
++    return static_cast<uint32_t>(__cvta_generic_to_shared(p));
++}
++__device__ __forceinline__ void cp_async16(void* d, const void* s)
++{
++    asm volatile("cp.async.cg.shared.global [%0],[%1],16;\n" ::"r"(smem_addr(d)),
++                 "l"(s));
++}
++__device__ __forceinline__ void cp_commit()
++{
++    asm volatile("cp.async.commit_group;\n");
++}
++template <int N>
++__device__ __forceinline__ void cp_wait()
++{
++    asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
++}
++
++__global__ void __launch_bounds__(NTHREADS)
++    kernel(int M, int N, int K, const half* __restrict__ A,
++           const half* __restrict__ B, half* __restrict__ C)
++{
++    extern __shared__ half smem[];
++    half* As = smem;                 // STAGES * AS
++    half* Bs = smem + STAGES * AS;   // STAGES * BS
++
++    const int blockRow = blockIdx.y * BM, blockCol = blockIdx.x * BN;
++    const int warpId = threadIdx.x >> 5;
++    const int warpRow = (warpId / WARPS_N) * WARP_M;
++    const int warpCol = (warpId % WARPS_N) * WARP_N;
++    const int tid = threadIdx.x;
++    const int numK = K / BK;
++
++    auto load_tile = [&](int kt, int st) {
++        int k0 = kt * BK;
++        half* Asb = As + st * AS;
++        half* Bsb = Bs + st * BS;
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BK / 8);
++            int col8 = (idx % (BK / 8)) * 8;
++            cp_async16(&Asb[row * LDA + col8],
++                       &A[(blockRow + row) * K + k0 + col8]);
++        }
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);
++            int col8 = (idx % (BN / 8)) * 8;
++            cp_async16(&Bsb[row * LDB + col8],
++                       &B[(k0 + row) * N + blockCol + col8]);
++        }
++        cp_commit();
++    };
++
++    wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc[MFRAG][NFRAG];
++#pragma unroll
++    for (int i = 0; i < MFRAG; ++i)
++#pragma unroll
++        for (int j = 0; j < NFRAG; ++j) wmma::fill_fragment(acc[i][j], 0.0f);
++
++    // Prologue: prefetch STAGES-1 tiles.
++#pragma unroll
++    for (int s = 0; s < STAGES - 1; ++s) load_tile(s, s);
++
++    for (int kt = 0; kt < numK; ++kt) {
++        cp_wait<STAGES - 2>();
++        __syncthreads();
++
++        int cur = kt % STAGES;
++        half* Asb = As + cur * AS;
++        half* Bsb = Bs + cur * BS;
++#pragma unroll
++        for (int kk = 0; kk < BK; kk += WMMA_K) {
++            wmma::fragment<wmma::matrix_a, 16, 16, 16, half, wmma::row_major>
++                aF[MFRAG];
++            wmma::fragment<wmma::matrix_b, 16, 16, 16, half, wmma::row_major>
++                bF[NFRAG];
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++                wmma::load_matrix_sync(aF[mi],
++                                       &Asb[(warpRow + mi * 16) * LDA + kk], LDA);
++#pragma unroll
++            for (int ni = 0; ni < NFRAG; ++ni)
++                wmma::load_matrix_sync(bF[ni],
++                                       &Bsb[kk * LDB + warpCol + ni * 16], LDB);
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    wmma::mma_sync(acc[mi][ni], aF[mi], bF[ni], acc[mi][ni]);
++        }
++
++        int nxt = kt + STAGES - 1;
++        if (nxt < numK) load_tile(nxt, nxt % STAGES);
++    }
++
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            wmma::fragment<wmma::accumulator, 16, 16, 16, half> cF;
++#pragma unroll
++            for (int t = 0; t < acc[mi][ni].num_elements; ++t)
++                cF.x[t] = __float2half(acc[mi][ni].x[t]);
++            int cRow = blockRow + warpRow + mi * 16;
++            int cCol = blockCol + warpCol + ni * 16;
++            wmma::store_matrix_sync(&C[cRow * N + cCol], cF, N,
++                                    wmma::mem_row_major);
++        }
++    }
++}
++
++}  // namespace v2
++
++PLAYGROUND_MATMUL_DEC(float16_t, 2, m, n, k, A, B, C)
++{
++    constexpr int smemBytes =
++        v2::STAGES * (v2::AS + v2::BS) * int(sizeof(half));
++    static bool attrSet = false;
++    if (!attrSet) {
++        cudaFuncSetAttribute(v2::kernel,
++                             cudaFuncAttributeMaxDynamicSharedMemorySize,
++                             smemBytes);
++        attrSet = true;
++    }
++    dim3 block(v2::NTHREADS);
++    dim3 grid(n / v2::BN, m / v2::BM);
++    v2::kernel<<<grid, block, smemBytes>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground
+diff --git a/task-1/src/matmul_f16/matmul_f16_v3_mma.cu b/task-1/src/matmul_f16/matmul_f16_v3_mma.cu
+new file mode 100644
+index 0000000..8349a20
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v3_mma.cu
+@@ -0,0 +1,208 @@
++#include <cuda_fp16.h>
++#include <cstdint>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v3
++{
++// Block / warp tiling
++constexpr int BM = 128, BN = 128, BK = 32;
++constexpr int WARPS_M = 2, WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;     // 8
++constexpr int NTHREADS = NWARPS * 32;          // 256
++constexpr int WARP_M = BM / WARPS_M;           // 64
++constexpr int WARP_N = BN / WARPS_N;           // 32
++constexpr int MFRAG = WARP_M / 16;             // 4  (m16 tiles)
++constexpr int NFRAG = WARP_N / 8;              // 4  (n8 tiles)
++constexpr int KSTEP = BK / 16;                 // 2  (k16 steps)
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                 // 40
++constexpr int LDB = BN + SKEW;                 // 136
++constexpr int STAGES = 3;
++constexpr int AS = BM * LDA;                    // halfs per A stage
++constexpr int BS = BK * LDB;                    // halfs per B stage
++
++__device__ __forceinline__ uint32_t smem_addr(const void* p)
++{
++    return static_cast<uint32_t>(__cvta_generic_to_shared(p));
++}
++__device__ __forceinline__ void cp_async16(void* d, const void* s)
++{
++    asm volatile("cp.async.cg.shared.global [%0],[%1],16;\n" ::"r"(smem_addr(d)),
++                 "l"(s)
++                 : "memory");
++}
++__device__ __forceinline__ void cp_commit()
++{
++    asm volatile("cp.async.commit_group;\n" ::: "memory");
++}
++template <int N>
++__device__ __forceinline__ void cp_wait()
++{
++    asm volatile("cp.async.wait_group %0;\n" ::"n"(N) : "memory");
++}
++__device__ __forceinline__ void ldm_x4(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void ldm_x4_trans(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void mma16816(float (&d)[4], const uint32_t (&a)[4],
++                                         const uint32_t (&b)[2])
++{
++    asm volatile(
++        "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
++        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
++        : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3])
++        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
++}
++
++__global__ void __launch_bounds__(NTHREADS)
++    kernel(int M, int N, int K, const half* __restrict__ A,
++           const half* __restrict__ B, half* __restrict__ C)
++{
++    extern __shared__ half smem[];
++    half* As = smem;
++    half* Bs = smem + STAGES * AS;
++
++    const int blockRow = blockIdx.y * BM, blockCol = blockIdx.x * BN;
++    const int warpId = threadIdx.x >> 5;
++    const int lane = threadIdx.x & 31;
++    const int warpRow = (warpId / WARPS_N) * WARP_M;
++    const int warpCol = (warpId % WARPS_N) * WARP_N;
++    const int tid = threadIdx.x;
++    const int numK = K / BK;
++
++    auto load_tile = [&](int kt, int st) {
++        int k0 = kt * BK;
++        half* Asb = As + st * AS;
++        half* Bsb = Bs + st * BS;
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BK / 8);
++            int col8 = (idx % (BK / 8)) * 8;
++            cp_async16(&Asb[row * LDA + col8],
++                       &A[(blockRow + row) * K + k0 + col8]);
++        }
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);
++            int col8 = (idx % (BN / 8)) * 8;
++            cp_async16(&Bsb[row * LDB + col8],
++                       &B[(k0 + row) * N + blockCol + col8]);
++        }
++        cp_commit();
++    };
++
++    float acc[MFRAG][NFRAG][4];
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni)
++#pragma unroll
++            for (int t = 0; t < 4; ++t) acc[mi][ni][t] = 0.0f;
++
++#pragma unroll
++    for (int s = 0; s < STAGES; ++s) {
++        if (s < numK)
++            load_tile(s, s);
++        else
++            cp_commit();
++    }
++
++    for (int kt = 0; kt < numK; ++kt) {
++        cp_wait<STAGES - 1>();
++        __syncthreads();
++
++        int cur = kt % STAGES;
++        half* Asb = As + cur * AS;
++        half* Bsb = Bs + cur * BS;
++
++#pragma unroll
++        for (int ks = 0; ks < KSTEP; ++ks) {
++            int kk = ks * 16;
++            uint32_t aReg[MFRAG][4];
++            uint32_t bReg[NFRAG][2];
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi) {
++                int r = warpRow + mi * 16 + (lane % 16);
++                int c = kk + (lane / 16) * 8;
++                ldm_x4(aReg[mi], smem_addr(&Asb[r * LDA + c]));
++            }
++#pragma unroll
++            for (int n2 = 0; n2 < NFRAG; n2 += 2) {
++                int r = kk + (lane % 16);
++                int c = warpCol + n2 * 8 + (lane / 16) * 8;
++                uint32_t t[4];
++                ldm_x4_trans(t, smem_addr(&Bsb[r * LDB + c]));
++                bReg[n2][0] = t[0];
++                bReg[n2][1] = t[1];
++                bReg[n2 + 1][0] = t[2];
++                bReg[n2 + 1][1] = t[3];
++            }
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    mma16816(acc[mi][ni], aReg[mi], bReg[ni]);
++        }
++
++        __syncthreads();
++        int nxt = kt + STAGES;
++        if (nxt < numK)
++            load_tile(nxt, nxt % STAGES);
++        else
++            cp_commit();
++    }
++
++    // Epilogue
++    const int groupID = lane >> 2;
++    const int tidg = lane & 3;
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            int mRow = blockRow + warpRow + mi * 16 + groupID;
++            int nCol = blockCol + warpCol + ni * 8 + tidg * 2;
++            half2 r01 = __floats2half2_rn(acc[mi][ni][0], acc[mi][ni][1]);
++            half2 r23 = __floats2half2_rn(acc[mi][ni][2], acc[mi][ni][3]);
++            *reinterpret_cast<half2*>(&C[mRow * N + nCol]) = r01;
++            *reinterpret_cast<half2*>(&C[(mRow + 8) * N + nCol]) = r23;
++        }
++    }
++}
++
++}  // namespace v3
++
++PLAYGROUND_MATMUL_DEC(float16_t, 3, m, n, k, A, B, C)
++{
++    constexpr int smemBytes =
++        v3::STAGES * (v3::AS + v3::BS) * int(sizeof(half));
++    static bool attrSet = false;
++    if (!attrSet) {
++        cudaFuncSetAttribute(v3::kernel,
++                             cudaFuncAttributeMaxDynamicSharedMemorySize,
++                             smemBytes);
++        attrSet = true;
++    }
++    dim3 block(v3::NTHREADS);
++    dim3 grid(n / v3::BN, m / v3::BM);
++    v3::kernel<<<grid, block, smemBytes>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground
+diff --git a/task-1/src/matmul_f16/matmul_f16_v4_regdb.cu b/task-1/src/matmul_f16/matmul_f16_v4_regdb.cu
+new file mode 100644
+index 0000000..b677a88
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v4_regdb.cu
+@@ -0,0 +1,216 @@
++#include <cuda_fp16.h>
++#include <cstdint>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v4
++{
++// Block / warp tiling
++constexpr int BM = 128, BN = 128, BK = 32;
++constexpr int WARPS_M = 2, WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;     // 8
++constexpr int NTHREADS = NWARPS * 32;          // 256
++constexpr int WARP_M = BM / WARPS_M;           // 64
++constexpr int WARP_N = BN / WARPS_N;           // 32
++constexpr int MFRAG = WARP_M / 16;             // 4  (m16 tiles)
++constexpr int NFRAG = WARP_N / 8;              // 4  (n8 tiles)
++constexpr int KSTEP = BK / 16;                 // 2  (k16 steps)
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                 // 40
++constexpr int LDB = BN + SKEW;                 // 136
++constexpr int STAGES = 3;
++constexpr int AS = BM * LDA;                    // halfs per A stage
++constexpr int BS = BK * LDB;                    // halfs per B stage
++
++__device__ __forceinline__ uint32_t smem_addr(const void* p)
++{
++    return static_cast<uint32_t>(__cvta_generic_to_shared(p));
++}
++__device__ __forceinline__ void cp_async16(void* d, const void* s)
++{
++    asm volatile("cp.async.cg.shared.global [%0],[%1],16;\n" ::"r"(smem_addr(d)),
++                 "l"(s)
++                 : "memory");
++}
++__device__ __forceinline__ void cp_commit()
++{
++    asm volatile("cp.async.commit_group;\n" ::: "memory");
++}
++template <int N>
++__device__ __forceinline__ void cp_wait()
++{
++    asm volatile("cp.async.wait_group %0;\n" ::"n"(N) : "memory");
++}
++__device__ __forceinline__ void ldm_x4(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void ldm_x4_trans(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void mma16816(float (&d)[4], const uint32_t (&a)[4],
++                                         const uint32_t (&b)[2])
++{
++    asm volatile(
++        "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
++        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
++        : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3])
++        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
++}
++
++__global__ void __launch_bounds__(NTHREADS)
++    kernel(int M, int N, int K, const half* __restrict__ A,
++           const half* __restrict__ B, half* __restrict__ C)
++{
++    extern __shared__ half smem[];
++    half* As = smem;
++    half* Bs = smem + STAGES * AS;
++
++    const int blockRow = blockIdx.y * BM, blockCol = blockIdx.x * BN;
++    const int warpId = threadIdx.x >> 5;
++    const int lane = threadIdx.x & 31;
++    const int warpRow = (warpId / WARPS_N) * WARP_M;
++    const int warpCol = (warpId % WARPS_N) * WARP_N;
++    const int tid = threadIdx.x;
++    const int numK = K / BK;
++
++    auto load_tile = [&](int kt, int st) {
++        int k0 = kt * BK;
++        half* Asb = As + st * AS;
++        half* Bsb = Bs + st * BS;
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BK / 8);
++            int col8 = (idx % (BK / 8)) * 8;
++            cp_async16(&Asb[row * LDA + col8],
++                       &A[(blockRow + row) * K + k0 + col8]);
++        }
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);
++            int col8 = (idx % (BN / 8)) * 8;
++            cp_async16(&Bsb[row * LDB + col8],
++                       &B[(k0 + row) * N + blockCol + col8]);
++        }
++        cp_commit();
++    };
++
++    float acc[MFRAG][NFRAG][4];
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni)
++#pragma unroll
++            for (int t = 0; t < 4; ++t) acc[mi][ni][t] = 0.0f;
++
++#pragma unroll
++    for (int s = 0; s < STAGES; ++s) {
++        if (s < numK)
++            load_tile(s, s);
++        else
++            cp_commit();
++    }
++
++    for (int kt = 0; kt < numK; ++kt) {
++        cp_wait<STAGES - 1>();
++        __syncthreads();
++
++        int cur = kt % STAGES;
++        half* Asb = As + cur * AS;
++        half* Bsb = Bs + cur * BS;
++
++        // Register double-buffered fragments: prefetch next k-step's
++        // ldmatrix while computing current k-step's mma (hides smem latency).
++        uint32_t aReg[2][MFRAG][4];
++        uint32_t bReg[2][NFRAG][2];
++
++        auto load_frags = [&](int buf, int kk) {
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi) {
++                int r = warpRow + mi * 16 + (lane % 16);
++                int c = kk + (lane / 16) * 8;
++                ldm_x4(aReg[buf][mi], smem_addr(&Asb[r * LDA + c]));
++            }
++#pragma unroll
++            for (int n2 = 0; n2 < NFRAG; n2 += 2) {
++                int r = kk + (lane % 16);
++                int c = warpCol + n2 * 8 + (lane / 16) * 8;
++                uint32_t t[4];
++                ldm_x4_trans(t, smem_addr(&Bsb[r * LDB + c]));
++                bReg[buf][n2][0] = t[0];
++                bReg[buf][n2][1] = t[1];
++                bReg[buf][n2 + 1][0] = t[2];
++                bReg[buf][n2 + 1][1] = t[3];
++            }
++        };
++
++        load_frags(0, 0);
++#pragma unroll
++        for (int ks = 0; ks < KSTEP; ++ks) {
++            int cb = ks & 1;
++            if (ks + 1 < KSTEP) load_frags((ks + 1) & 1, (ks + 1) * 16);
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    mma16816(acc[mi][ni], aReg[cb][mi], bReg[cb][ni]);
++        }
++
++        __syncthreads();
++        int nxt = kt + STAGES;
++        if (nxt < numK)
++            load_tile(nxt, nxt % STAGES);
++        else
++            cp_commit();
++    }
++
++    // Epilogue
++    const int groupID = lane >> 2;
++    const int tidg = lane & 3;
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            int mRow = blockRow + warpRow + mi * 16 + groupID;
++            int nCol = blockCol + warpCol + ni * 8 + tidg * 2;
++            half2 r01 = __floats2half2_rn(acc[mi][ni][0], acc[mi][ni][1]);
++            half2 r23 = __floats2half2_rn(acc[mi][ni][2], acc[mi][ni][3]);
++            *reinterpret_cast<half2*>(&C[mRow * N + nCol]) = r01;
++            *reinterpret_cast<half2*>(&C[(mRow + 8) * N + nCol]) = r23;
++        }
++    }
++}
++
++}  // namespace v4
++
++PLAYGROUND_MATMUL_DEC(float16_t, 4, m, n, k, A, B, C)
++{
++    constexpr int smemBytes =
++        v4::STAGES * (v4::AS + v4::BS) * int(sizeof(half));
++    static bool attrSet = false;
++    if (!attrSet) {
++        cudaFuncSetAttribute(v4::kernel,
++                             cudaFuncAttributeMaxDynamicSharedMemorySize,
++                             smemBytes);
++        attrSet = true;
++    }
++    dim3 block(v4::NTHREADS);
++    dim3 grid(n / v4::BN, m / v4::BM);
++    v4::kernel<<<grid, block, smemBytes>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground
+diff --git a/task-1/src/matmul_f16/matmul_f16_v5_swizzle.cu b/task-1/src/matmul_f16/matmul_f16_v5_swizzle.cu
+new file mode 100644
+index 0000000..e8e868b
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v5_swizzle.cu
+@@ -0,0 +1,233 @@
++#include <cuda_fp16.h>
++#include <cstdint>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v5
++{
++// Block / warp tiling
++constexpr int BM = 128, BN = 128, BK = 32;
++constexpr int WARPS_M = 2, WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;     // 8
++constexpr int NTHREADS = NWARPS * 32;          // 256
++constexpr int WARP_M = BM / WARPS_M;           // 64
++constexpr int WARP_N = BN / WARPS_N;           // 32
++constexpr int MFRAG = WARP_M / 16;             // 4  (m16 tiles)
++constexpr int NFRAG = WARP_N / 8;              // 4  (n8 tiles)
++constexpr int KSTEP = BK / 16;                 // 2  (k16 steps)
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                 // 40
++constexpr int LDB = BN + SKEW;                 // 136
++constexpr int STAGES = 3;
++constexpr int AS = BM * LDA;                    // halfs per A stage
++constexpr int BS = BK * LDB;                    // halfs per B stage
++
++__device__ __forceinline__ uint32_t smem_addr(const void* p)
++{
++    return static_cast<uint32_t>(__cvta_generic_to_shared(p));
++}
++__device__ __forceinline__ void cp_async16(void* d, const void* s)
++{
++    asm volatile("cp.async.cg.shared.global [%0],[%1],16;\n" ::"r"(smem_addr(d)),
++                 "l"(s)
++                 : "memory");
++}
++__device__ __forceinline__ void cp_commit()
++{
++    asm volatile("cp.async.commit_group;\n" ::: "memory");
++}
++template <int N>
++__device__ __forceinline__ void cp_wait()
++{
++    asm volatile("cp.async.wait_group %0;\n" ::"n"(N) : "memory");
++}
++__device__ __forceinline__ void ldm_x4(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void ldm_x4_trans(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void mma16816(float (&d)[4], const uint32_t (&a)[4],
++                                         const uint32_t (&b)[2])
++{
++    asm volatile(
++        "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
++        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
++        : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3])
++        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
++}
++
++__global__ void __launch_bounds__(NTHREADS)
++    kernel(int M, int N, int K, const half* __restrict__ A,
++           const half* __restrict__ B, half* __restrict__ C)
++{
++    extern __shared__ half smem[];
++    half* As = smem;
++    half* Bs = smem + STAGES * AS;
++
++    // Threadblock swizzle for L2 locality: traverse blocks column-major
++    // within groups of GROUP block-rows so concurrently-running CTAs reuse
++    // the same A/B strips in L2.
++    constexpr int GROUP = 8;
++    const int numBM = M / BM;
++    const int numBN = N / BN;
++    const int bid = blockIdx.x;
++    const int blocksPerGroup = GROUP * numBN;
++    const int groupId = bid / blocksPerGroup;
++    const int firstRow = groupId * GROUP;
++    const int rowsThis = min(GROUP, numBM - firstRow);
++    const int idxInGroup = bid - groupId * blocksPerGroup;
++    const int brow = firstRow + idxInGroup % rowsThis;
++    const int bcol = idxInGroup / rowsThis;
++    const int blockRow = brow * BM, blockCol = bcol * BN;
++    const int warpId = threadIdx.x >> 5;
++    const int lane = threadIdx.x & 31;
++    const int warpRow = (warpId / WARPS_N) * WARP_M;
++    const int warpCol = (warpId % WARPS_N) * WARP_N;
++    const int tid = threadIdx.x;
++    const int numK = K / BK;
++
++    auto load_tile = [&](int kt, int st) {
++        int k0 = kt * BK;
++        half* Asb = As + st * AS;
++        half* Bsb = Bs + st * BS;
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BK / 8);
++            int col8 = (idx % (BK / 8)) * 8;
++            cp_async16(&Asb[row * LDA + col8],
++                       &A[(blockRow + row) * K + k0 + col8]);
++        }
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);
++            int col8 = (idx % (BN / 8)) * 8;
++            cp_async16(&Bsb[row * LDB + col8],
++                       &B[(k0 + row) * N + blockCol + col8]);
++        }
++        cp_commit();
++    };
++
++    float acc[MFRAG][NFRAG][4];
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni)
++#pragma unroll
++            for (int t = 0; t < 4; ++t) acc[mi][ni][t] = 0.0f;
++
++#pragma unroll
++    for (int s = 0; s < STAGES; ++s) {
++        if (s < numK)
++            load_tile(s, s);
++        else
++            cp_commit();
++    }
++
++    for (int kt = 0; kt < numK; ++kt) {
++        cp_wait<STAGES - 1>();
++        __syncthreads();
++
++        int cur = kt % STAGES;
++        half* Asb = As + cur * AS;
++        half* Bsb = Bs + cur * BS;
++
++        // Register double-buffered fragments: prefetch next k-step's
++        // ldmatrix while computing current k-step's mma (hides smem latency).
++        uint32_t aReg[2][MFRAG][4];
++        uint32_t bReg[2][NFRAG][2];
++
++        auto load_frags = [&](int buf, int kk) {
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi) {
++                int r = warpRow + mi * 16 + (lane % 16);
++                int c = kk + (lane / 16) * 8;
++                ldm_x4(aReg[buf][mi], smem_addr(&Asb[r * LDA + c]));
++            }
++#pragma unroll
++            for (int n2 = 0; n2 < NFRAG; n2 += 2) {
++                int r = kk + (lane % 16);
++                int c = warpCol + n2 * 8 + (lane / 16) * 8;
++                uint32_t t[4];
++                ldm_x4_trans(t, smem_addr(&Bsb[r * LDB + c]));
++                bReg[buf][n2][0] = t[0];
++                bReg[buf][n2][1] = t[1];
++                bReg[buf][n2 + 1][0] = t[2];
++                bReg[buf][n2 + 1][1] = t[3];
++            }
++        };
++
++        load_frags(0, 0);
++#pragma unroll
++        for (int ks = 0; ks < KSTEP; ++ks) {
++            int cb = ks & 1;
++            if (ks + 1 < KSTEP) load_frags((ks + 1) & 1, (ks + 1) * 16);
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    mma16816(acc[mi][ni], aReg[cb][mi], bReg[cb][ni]);
++        }
++
++        __syncthreads();
++        int nxt = kt + STAGES;
++        if (nxt < numK)
++            load_tile(nxt, nxt % STAGES);
++        else
++            cp_commit();
++    }
++
++    // Epilogue
++    const int groupID = lane >> 2;
++    const int tidg = lane & 3;
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            int mRow = blockRow + warpRow + mi * 16 + groupID;
++            int nCol = blockCol + warpCol + ni * 8 + tidg * 2;
++            half2 r01 = __floats2half2_rn(acc[mi][ni][0], acc[mi][ni][1]);
++            half2 r23 = __floats2half2_rn(acc[mi][ni][2], acc[mi][ni][3]);
++            *reinterpret_cast<half2*>(&C[mRow * N + nCol]) = r01;
++            *reinterpret_cast<half2*>(&C[(mRow + 8) * N + nCol]) = r23;
++        }
++    }
++}
++
++}  // namespace v5
++
++PLAYGROUND_MATMUL_DEC(float16_t, 5, m, n, k, A, B, C)
++{
++    constexpr int smemBytes =
++        v5::STAGES * (v5::AS + v5::BS) * int(sizeof(half));
++    static bool attrSet = false;
++    if (!attrSet) {
++        cudaFuncSetAttribute(v5::kernel,
++                             cudaFuncAttributeMaxDynamicSharedMemorySize,
++                             smemBytes);
++        cudaFuncSetAttribute(v5::kernel,
++                             cudaFuncAttributePreferredSharedMemoryCarveout,
++                             cudaSharedmemCarveoutMaxShared);
++        attrSet = true;
++    }
++    dim3 block(v5::NTHREADS);
++    dim3 grid((n / v5::BN) * (m / v5::BM));
++    v5::kernel<<<grid, block, smemBytes>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground
+diff --git a/task-1/src/matmul_f16/matmul_f16_v6_f16acc.cu b/task-1/src/matmul_f16/matmul_f16_v6_f16acc.cu
+new file mode 100644
+index 0000000..d1950ba
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v6_f16acc.cu
+@@ -0,0 +1,225 @@
++#include <cuda_fp16.h>
++#include <cstdint>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v6
++{
++// Block / warp tiling
++constexpr int BM = 128, BN = 256, BK = 32;
++constexpr int WARPS_M = 2, WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;     // 8
++constexpr int NTHREADS = NWARPS * 32;          // 256
++constexpr int WARP_M = BM / WARPS_M;           // 64
++constexpr int WARP_N = BN / WARPS_N;           // 32
++constexpr int MFRAG = WARP_M / 16;             // 4  (m16 tiles)
++constexpr int NFRAG = WARP_N / 8;              // 4  (n8 tiles)
++constexpr int KSTEP = BK / 16;                 // 2  (k16 steps)
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                 // 40
++constexpr int LDB = BN + SKEW;                 // 136
++constexpr int STAGES = 3;
++constexpr int AS = BM * LDA;                    // halfs per A stage
++constexpr int BS = BK * LDB;                    // halfs per B stage
++
++__device__ __forceinline__ uint32_t smem_addr(const void* p)
++{
++    return static_cast<uint32_t>(__cvta_generic_to_shared(p));
++}
++__device__ __forceinline__ void cp_async16(void* d, const void* s)
++{
++    asm volatile("cp.async.cg.shared.global [%0],[%1],16;\n" ::"r"(smem_addr(d)),
++                 "l"(s)
++                 : "memory");
++}
++__device__ __forceinline__ void cp_commit()
++{
++    asm volatile("cp.async.commit_group;\n" ::: "memory");
++}
++template <int N>
++__device__ __forceinline__ void cp_wait()
++{
++    asm volatile("cp.async.wait_group %0;\n" ::"n"(N) : "memory");
++}
++__device__ __forceinline__ void ldm_x4(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void ldm_x4_trans(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void mma16816(uint32_t (&d)[2],
++                                         const uint32_t (&a)[4],
++                                         const uint32_t (&b)[2])
++{
++    asm volatile(
++        "mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
++        "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%0,%1};\n"
++        : "+r"(d[0]), "+r"(d[1])
++        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
++}
++
++__global__ void __launch_bounds__(NTHREADS, 2)
++    kernel(int M, int N, int K, const half* __restrict__ A,
++           const half* __restrict__ B, half* __restrict__ C)
++{
++    extern __shared__ half smem[];
++    half* As = smem;
++    half* Bs = smem + STAGES * AS;
++
++    // Threadblock swizzle for L2 locality: traverse blocks column-major
++    // within groups of GROUP block-rows so concurrently-running CTAs reuse
++    // the same A/B strips in L2.
++    constexpr int GROUP = 8;
++    const int numBM = M / BM;
++    const int numBN = N / BN;
++    const int bid = blockIdx.x;
++    const int blocksPerGroup = GROUP * numBN;
++    const int groupId = bid / blocksPerGroup;
++    const int firstRow = groupId * GROUP;
++    const int rowsThis = min(GROUP, numBM - firstRow);
++    const int idxInGroup = bid - groupId * blocksPerGroup;
++    const int brow = firstRow + idxInGroup % rowsThis;
++    const int bcol = idxInGroup / rowsThis;
++    const int blockRow = brow * BM, blockCol = bcol * BN;
++    const int warpId = threadIdx.x >> 5;
++    const int lane = threadIdx.x & 31;
++    const int warpRow = (warpId / WARPS_N) * WARP_M;
++    const int warpCol = (warpId % WARPS_N) * WARP_N;
++    const int tid = threadIdx.x;
++    const int numK = K / BK;
++
++    auto load_tile = [&](int kt, int st) {
++        int k0 = kt * BK;
++        half* Asb = As + st * AS;
++        half* Bsb = Bs + st * BS;
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BK / 8);
++            int col8 = (idx % (BK / 8)) * 8;
++            cp_async16(&Asb[row * LDA + col8],
++                       &A[(blockRow + row) * K + k0 + col8]);
++        }
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);
++            int col8 = (idx % (BN / 8)) * 8;
++            cp_async16(&Bsb[row * LDB + col8],
++                       &B[(k0 + row) * N + blockCol + col8]);
++        }
++        cp_commit();
++    };
++
++    uint32_t acc[MFRAG][NFRAG][2];  // f16 accumulate: 2 packed half2 / tile
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni)
++#pragma unroll
++            for (int t = 0; t < 2; ++t) acc[mi][ni][t] = 0u;
++
++#pragma unroll
++    for (int s = 0; s < STAGES; ++s) {
++        if (s < numK)
++            load_tile(s, s);
++        else
++            cp_commit();
++    }
++
++    for (int kt = 0; kt < numK; ++kt) {
++        cp_wait<STAGES - 1>();
++        __syncthreads();
++
++        int cur = kt % STAGES;
++        half* Asb = As + cur * AS;
++        half* Bsb = Bs + cur * BS;
++
++#pragma unroll
++        for (int ks = 0; ks < KSTEP; ++ks) {
++            int kk = ks * 16;
++            uint32_t aReg[MFRAG][4];
++            uint32_t bReg[NFRAG][2];
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi) {
++                int r = warpRow + mi * 16 + (lane % 16);
++                int c = kk + (lane / 16) * 8;
++                ldm_x4(aReg[mi], smem_addr(&Asb[r * LDA + c]));
++            }
++#pragma unroll
++            for (int n2 = 0; n2 < NFRAG; n2 += 2) {
++                int r = kk + (lane % 16);
++                int c = warpCol + n2 * 8 + (lane / 16) * 8;
++                uint32_t t[4];
++                ldm_x4_trans(t, smem_addr(&Bsb[r * LDB + c]));
++                bReg[n2][0] = t[0];
++                bReg[n2][1] = t[1];
++                bReg[n2 + 1][0] = t[2];
++                bReg[n2 + 1][1] = t[3];
++            }
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    mma16816(acc[mi][ni], aReg[mi], bReg[ni]);
++        }
++
++        __syncthreads();
++        int nxt = kt + STAGES;
++        if (nxt < numK)
++            load_tile(nxt, nxt % STAGES);
++        else
++            cp_commit();
++    }
++
++    // Epilogue
++    const int groupID = lane >> 2;
++    const int tidg = lane & 3;
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            int mRow = blockRow + warpRow + mi * 16 + groupID;
++            int nCol = blockCol + warpCol + ni * 8 + tidg * 2;
++            *reinterpret_cast<uint32_t*>(&C[mRow * N + nCol]) = acc[mi][ni][0];
++            *reinterpret_cast<uint32_t*>(&C[(mRow + 8) * N + nCol]) =
++                acc[mi][ni][1];
++        }
++    }
++}
++
++}  // namespace v6
++
++PLAYGROUND_MATMUL_DEC(float16_t, 6, m, n, k, A, B, C)
++{
++    constexpr int smemBytes =
++        v6::STAGES * (v6::AS + v6::BS) * int(sizeof(half));
++    static bool attrSet = false;
++    if (!attrSet) {
++        cudaFuncSetAttribute(v6::kernel,
++                             cudaFuncAttributeMaxDynamicSharedMemorySize,
++                             smemBytes);
++        cudaFuncSetAttribute(v6::kernel,
++                             cudaFuncAttributePreferredSharedMemoryCarveout,
++                             cudaSharedmemCarveoutMaxShared);
++        attrSet = true;
++    }
++    dim3 block(v6::NTHREADS);
++    dim3 grid((n / v6::BN) * (m / v6::BM));
++    v6::kernel<<<grid, block, smemBytes>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground
+diff --git a/task-1/src/matmul_f16/matmul_f16_v7_f16occ.cu b/task-1/src/matmul_f16/matmul_f16_v7_f16occ.cu
+new file mode 100644
+index 0000000..5b799f6
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v7_f16occ.cu
+@@ -0,0 +1,221 @@
++#include <cuda_fp16.h>
++#include <cstdint>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v7
++{
++// Block / warp tiling
++constexpr int BM = 128, BN = 256, BK = 32;
++constexpr int WARPS_M = 2, WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;     // 8
++constexpr int NTHREADS = NWARPS * 32;          // 256
++constexpr int WARP_M = BM / WARPS_M;           // 64
++constexpr int WARP_N = BN / WARPS_N;           // 32
++constexpr int MFRAG = WARP_M / 16;             // 4  (m16 tiles)
++constexpr int NFRAG = WARP_N / 8;              // 4  (n8 tiles)
++constexpr int KSTEP = BK / 16;                 // 2  (k16 steps)
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                 // 40
++constexpr int LDB = BN + SKEW;                 // 136
++constexpr int STAGES = 3;
++constexpr int AS = BM * LDA;                    // halfs per A stage
++constexpr int BS = BK * LDB;                    // halfs per B stage
++
++__device__ __forceinline__ uint32_t smem_addr(const void* p)
++{
++    return static_cast<uint32_t>(__cvta_generic_to_shared(p));
++}
++__device__ __forceinline__ void cp_async16(void* d, const void* s)
++{
++    asm volatile("cp.async.cg.shared.global [%0],[%1],16;\n" ::"r"(smem_addr(d)),
++                 "l"(s)
++                 : "memory");
++}
++__device__ __forceinline__ void cp_commit()
++{
++    asm volatile("cp.async.commit_group;\n" ::: "memory");
++}
++template <int N>
++__device__ __forceinline__ void cp_wait()
++{
++    asm volatile("cp.async.wait_group %0;\n" ::"n"(N) : "memory");
++}
++__device__ __forceinline__ void ldm_x4(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void ldm_x4_trans(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void mma16816(uint32_t (&d)[2],
++                                         const uint32_t (&a)[4],
++                                         const uint32_t (&b)[2])
++{
++    asm volatile(
++        "mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
++        "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%0,%1};\n"
++        : "+r"(d[0]), "+r"(d[1])
++        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
++}
++
++__global__ void __launch_bounds__(NTHREADS, 2)
++    kernel(int M, int N, int K, const half* __restrict__ A,
++           const half* __restrict__ B, half* __restrict__ C)
++{
++    extern __shared__ half smem[];
++    half* As = smem;
++    half* Bs = smem + STAGES * AS;
++
++    const int blockRow = blockIdx.y * BM, blockCol = blockIdx.x * BN;
++    const int warpId = threadIdx.x >> 5;
++    const int lane = threadIdx.x & 31;
++    const int warpRow = (warpId / WARPS_N) * WARP_M;
++    const int warpCol = (warpId % WARPS_N) * WARP_N;
++    const int tid = threadIdx.x;
++    const int numK = K / BK;
++
++    auto load_tile = [&](int kt, int st) {
++        int k0 = kt * BK;
++        half* Asb = As + st * AS;
++        half* Bsb = Bs + st * BS;
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BK / 8);
++            int col8 = (idx % (BK / 8)) * 8;
++            cp_async16(&Asb[row * LDA + col8],
++                       &A[(blockRow + row) * K + k0 + col8]);
++        }
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);
++            int col8 = (idx % (BN / 8)) * 8;
++            cp_async16(&Bsb[row * LDB + col8],
++                       &B[(k0 + row) * N + blockCol + col8]);
++        }
++        cp_commit();
++    };
++
++    uint32_t acc[MFRAG][NFRAG][2];
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni)
++#pragma unroll
++            for (int t = 0; t < 2; ++t) acc[mi][ni][t] = 0u;
++
++#pragma unroll
++    for (int s = 0; s < STAGES - 1; ++s) {
++        if (s < numK)
++            load_tile(s, s);
++        else
++            cp_commit();
++    }
++
++    for (int kt = 0; kt < numK; ++kt) {
++        cp_wait<STAGES - 2>();
++        __syncthreads();
++
++        int cur = kt % STAGES;
++        half* Asb = As + cur * AS;
++        half* Bsb = Bs + cur * BS;
++
++        // Register double-buffered fragments: prefetch next k-step's
++        // ldmatrix while computing current k-step's mma (hides smem latency).
++        uint32_t aReg[2][MFRAG][4];
++        uint32_t bReg[2][NFRAG][2];
++
++        auto load_frags = [&](int buf, int kk) {
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi) {
++                int r = warpRow + mi * 16 + (lane % 16);
++                int c = kk + (lane / 16) * 8;
++                ldm_x4(aReg[buf][mi], smem_addr(&Asb[r * LDA + c]));
++            }
++#pragma unroll
++            for (int n2 = 0; n2 < NFRAG; n2 += 2) {
++                int r = kk + (lane % 16);
++                int c = warpCol + n2 * 8 + (lane / 16) * 8;
++                uint32_t t[4];
++                ldm_x4_trans(t, smem_addr(&Bsb[r * LDB + c]));
++                bReg[buf][n2][0] = t[0];
++                bReg[buf][n2][1] = t[1];
++                bReg[buf][n2 + 1][0] = t[2];
++                bReg[buf][n2 + 1][1] = t[3];
++            }
++        };
++
++        // Single-barrier multistage with register-DB; cp.async prefetch as a
++        // burst AFTER compute into the buffer freed at kt-1 (WAR safe: the
++        // start-of-iteration barrier separates it from kt-1's reads).
++        const int nxt = kt + STAGES - 1;
++
++        load_frags(0, 0);
++#pragma unroll
++        for (int ks = 0; ks < KSTEP; ++ks) {
++            int cb = ks & 1;
++            if (ks + 1 < KSTEP) load_frags((ks + 1) & 1, (ks + 1) * 16);
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    mma16816(acc[mi][ni], aReg[cb][mi], bReg[cb][ni]);
++        }
++        if (nxt < numK)
++            load_tile(nxt, nxt % STAGES);
++        else
++            cp_commit();
++    }
++
++    // Epilogue
++    const int groupID = lane >> 2;
++    const int tidg = lane & 3;
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            int mRow = blockRow + warpRow + mi * 16 + groupID;
++            int nCol = blockCol + warpCol + ni * 8 + tidg * 2;
++            *reinterpret_cast<uint32_t*>(&C[mRow * N + nCol]) = acc[mi][ni][0];
++            *reinterpret_cast<uint32_t*>(&C[(mRow + 8) * N + nCol]) =
++                acc[mi][ni][1];
++        }
++    }
++}
++
++}  // namespace v7
++
++PLAYGROUND_MATMUL_DEC(float16_t, 7, m, n, k, A, B, C)
++{
++    constexpr int smemBytes =
++        v7::STAGES * (v7::AS + v7::BS) * int(sizeof(half));
++    static bool attrSet = false;
++    if (!attrSet) {
++        cudaFuncSetAttribute(v7::kernel,
++                             cudaFuncAttributeMaxDynamicSharedMemorySize,
++                             smemBytes);
++        cudaFuncSetAttribute(v7::kernel,
++                             cudaFuncAttributePreferredSharedMemoryCarveout,
++                             cudaSharedmemCarveoutMaxShared);
++        attrSet = true;
++    }
++    dim3 block(v7::NTHREADS);
++    dim3 grid(n / v7::BN, m / v7::BM);
++    v7::kernel<<<grid, block, smemBytes>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground
+diff --git a/task-1/src/matmul_f16/matmul_f16_v8_epi.cu b/task-1/src/matmul_f16/matmul_f16_v8_epi.cu
+new file mode 100644
+index 0000000..795c190
+--- /dev/null
++++ b/task-1/src/matmul_f16/matmul_f16_v8_epi.cu
+@@ -0,0 +1,235 @@
++#include <cuda_fp16.h>
++#include <cstdint>
++
++#include "playground/matmul.hpp"
++#include "playground/system.hpp"
++
++namespace playground
++{
++namespace v8
++{
++// Block / warp tiling
++constexpr int BM = 128, BN = 256, BK = 32;
++constexpr int WARPS_M = 2, WARPS_N = 4;
++constexpr int NWARPS = WARPS_M * WARPS_N;     // 8
++constexpr int NTHREADS = NWARPS * 32;          // 256
++constexpr int WARP_M = BM / WARPS_M;           // 64
++constexpr int WARP_N = BN / WARPS_N;           // 32
++constexpr int MFRAG = WARP_M / 16;             // 4  (m16 tiles)
++constexpr int NFRAG = WARP_N / 8;              // 4  (n8 tiles)
++constexpr int KSTEP = BK / 16;                 // 2  (k16 steps)
++constexpr int SKEW = 8;
++constexpr int LDA = BK + SKEW;                 // 40
++constexpr int LDB = BN + SKEW;                 // 136
++constexpr int STAGES = 3;
++constexpr int AS = BM * LDA;                    // halfs per A stage
++constexpr int BS = BK * LDB;                    // halfs per B stage
++
++__device__ __forceinline__ uint32_t smem_addr(const void* p)
++{
++    return static_cast<uint32_t>(__cvta_generic_to_shared(p));
++}
++__device__ __forceinline__ void cp_async16(void* d, const void* s)
++{
++    asm volatile("cp.async.cg.shared.global [%0],[%1],16;\n" ::"r"(smem_addr(d)),
++                 "l"(s)
++                 : "memory");
++}
++__device__ __forceinline__ void cp_commit()
++{
++    asm volatile("cp.async.commit_group;\n" ::: "memory");
++}
++template <int N>
++__device__ __forceinline__ void cp_wait()
++{
++    asm volatile("cp.async.wait_group %0;\n" ::"n"(N) : "memory");
++}
++__device__ __forceinline__ void ldm_x4(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void ldm_x4_trans(uint32_t (&r)[4], uint32_t a)
++{
++    asm volatile(
++        "ldmatrix.sync.aligned.m8n8.x4.trans.shared.b16 {%0,%1,%2,%3}, [%4];\n"
++        : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
++        : "r"(a)
++        : "memory");
++}
++__device__ __forceinline__ void mma16816(uint32_t (&d)[2],
++                                         const uint32_t (&a)[4],
++                                         const uint32_t (&b)[2])
++{
++    asm volatile(
++        "mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
++        "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%0,%1};\n"
++        : "+r"(d[0]), "+r"(d[1])
++        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b[0]), "r"(b[1]));
++}
++
++__global__ void __launch_bounds__(NTHREADS, 2)
++    kernel(int M, int N, int K, const half* __restrict__ A,
++           const half* __restrict__ B, half* __restrict__ C)
++{
++    extern __shared__ half smem[];
++    half* As = smem;
++    half* Bs = smem + STAGES * AS;
++
++    const int blockRow = blockIdx.y * BM, blockCol = blockIdx.x * BN;
++    const int warpId = threadIdx.x >> 5;
++    const int lane = threadIdx.x & 31;
++    const int warpRow = (warpId / WARPS_N) * WARP_M;
++    const int warpCol = (warpId % WARPS_N) * WARP_N;
++    const int tid = threadIdx.x;
++    const int numK = K / BK;
++
++    auto load_tile = [&](int kt, int st) {
++        int k0 = kt * BK;
++        half* Asb = As + st * AS;
++        half* Bsb = Bs + st * BS;
++#pragma unroll
++        for (int i = 0; i < (BM * BK / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BK / 8);
++            int col8 = (idx % (BK / 8)) * 8;
++            cp_async16(&Asb[row * LDA + col8],
++                       &A[(blockRow + row) * K + k0 + col8]);
++        }
++#pragma unroll
++        for (int i = 0; i < (BK * BN / 8) / NTHREADS; ++i) {
++            int idx = tid + i * NTHREADS;
++            int row = idx / (BN / 8);
++            int col8 = (idx % (BN / 8)) * 8;
++            cp_async16(&Bsb[row * LDB + col8],
++                       &B[(k0 + row) * N + blockCol + col8]);
++        }
++        cp_commit();
++    };
++
++    uint32_t acc[MFRAG][NFRAG][2];
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni)
++#pragma unroll
++            for (int t = 0; t < 2; ++t) acc[mi][ni][t] = 0u;
++
++#pragma unroll
++    for (int s = 0; s < STAGES - 1; ++s) {
++        if (s < numK)
++            load_tile(s, s);
++        else
++            cp_commit();
++    }
++
++    for (int kt = 0; kt < numK; ++kt) {
++        cp_wait<STAGES - 2>();
++        __syncthreads();
++
++        int cur = kt % STAGES;
++        half* Asb = As + cur * AS;
++        half* Bsb = Bs + cur * BS;
++
++        // Register double-buffered fragments: prefetch next k-step's
++        // ldmatrix while computing current k-step's mma (hides smem latency).
++        uint32_t aReg[2][MFRAG][4];
++        uint32_t bReg[2][NFRAG][2];
++
++        auto load_frags = [&](int buf, int kk) {
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi) {
++                int r = warpRow + mi * 16 + (lane % 16);
++                int c = kk + (lane / 16) * 8;
++                ldm_x4(aReg[buf][mi], smem_addr(&Asb[r * LDA + c]));
++            }
++#pragma unroll
++            for (int n2 = 0; n2 < NFRAG; n2 += 2) {
++                int r = kk + (lane % 16);
++                int c = warpCol + n2 * 8 + (lane / 16) * 8;
++                uint32_t t[4];
++                ldm_x4_trans(t, smem_addr(&Bsb[r * LDB + c]));
++                bReg[buf][n2][0] = t[0];
++                bReg[buf][n2][1] = t[1];
++                bReg[buf][n2 + 1][0] = t[2];
++                bReg[buf][n2 + 1][1] = t[3];
++            }
++        };
++
++        // Single-barrier multistage with register-DB; cp.async prefetch as a
++        // burst AFTER compute into the buffer freed at kt-1 (WAR safe: the
++        // start-of-iteration barrier separates it from kt-1's reads).
++        const int nxt = kt + STAGES - 1;
++
++        load_frags(0, 0);
++#pragma unroll
++        for (int ks = 0; ks < KSTEP; ++ks) {
++            int cb = ks & 1;
++            if (ks + 1 < KSTEP) load_frags((ks + 1) & 1, (ks + 1) * 16);
++#pragma unroll
++            for (int mi = 0; mi < MFRAG; ++mi)
++#pragma unroll
++                for (int ni = 0; ni < NFRAG; ++ni)
++                    mma16816(acc[mi][ni], aReg[cb][mi], bReg[cb][ni]);
++        }
++        if (nxt < numK)
++            load_tile(nxt, nxt % STAGES);
++        else
++            cp_commit();
++    }
++
++    // Epilogue: stage the C tile through shared (reuse As/Bs smem, now free)
++    // then write to global fully coalesced (128-byte) instead of scattered 4B.
++    constexpr int LDC = BN + 8;  // pad -> conflict-free shared C stage
++    half* Cs = smem;
++    const int groupID = lane >> 2;
++    const int tidg = lane & 3;
++    __syncthreads();  // no warp still reading As/Bs from the last k-tile
++#pragma unroll
++    for (int mi = 0; mi < MFRAG; ++mi) {
++#pragma unroll
++        for (int ni = 0; ni < NFRAG; ++ni) {
++            int r = warpRow + mi * 16 + groupID;
++            int c = warpCol + ni * 8 + tidg * 2;
++            *reinterpret_cast<uint32_t*>(&Cs[r * LDC + c]) = acc[mi][ni][0];
++            *reinterpret_cast<uint32_t*>(&Cs[(r + 8) * LDC + c]) =
++                acc[mi][ni][1];
++        }
++    }
++    __syncthreads();
++    // Coalesced copy Cs[BM][BN] -> C, 8 halfs (float4) per access.
++#pragma unroll
++    for (int i = 0; i < (BM * BN / 8) / NTHREADS; ++i) {
++        int idx = tid + i * NTHREADS;
++        int row = idx / (BN / 8);
++        int col8 = (idx % (BN / 8)) * 8;
++        *reinterpret_cast<float4*>(&C[(blockRow + row) * N + blockCol + col8]) =
++            *reinterpret_cast<float4*>(&Cs[row * LDC + col8]);
++    }
++}
++
++}  // namespace v8
++
++PLAYGROUND_MATMUL_DEC(float16_t, 8, m, n, k, A, B, C)
++{
++    constexpr int smemBytes =
++        v8::STAGES * (v8::AS + v8::BS) * int(sizeof(half));
++    static bool attrSet = false;
++    if (!attrSet) {
++        cudaFuncSetAttribute(v8::kernel,
++                             cudaFuncAttributeMaxDynamicSharedMemorySize,
++                             smemBytes);
++        cudaFuncSetAttribute(v8::kernel,
++                             cudaFuncAttributePreferredSharedMemoryCarveout,
++                             cudaSharedmemCarveoutMaxShared);
++        attrSet = true;
++    }
++    dim3 block(v8::NTHREADS);
++    dim3 grid(n / v8::BN, m / v8::BM);
++    v8::kernel<<<grid, block, smemBytes>>>(int(m), int(n), int(k), A, B, C);
++}
++
++}  // namespace playground

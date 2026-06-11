@@ -1,0 +1,7 @@
+Run started at: Mon Jun  8 00:35:35 UTC 2026
+FLOAT_TYPE: float16
+VERSION: 13
+======================================
+[Playground] Start Testing for GEMM Version 13 with DType float16 ...
+[Playground] Calculating Finished
+[Playground] Check failed at /home/daixu/code/github_code/VibeKernel/worktrees/goal_cycle2/task-1/include/playground/test_data.hpp:155 for "!::std::isinf(errSum)"

@@ -1,0 +1,13 @@
+A	task-1/src/matmul_f16/matmul_f16_v10_bk32.cu
+A	task-1/src/matmul_f16/matmul_f16_v11_graph.cu
+A	task-1/src/matmul_f16/matmul_f16_v12_256x128.cu
+A	task-1/src/matmul_f16/matmul_f16_v13_f32acc.cu
+A	task-1/src/matmul_f16/matmul_f16_v1_mma.cu
+A	task-1/src/matmul_f16/matmul_f16_v2_bigtile.cu
+A	task-1/src/matmul_f16/matmul_f16_v3_pipe.cu
+A	task-1/src/matmul_f16/matmul_f16_v4_sched.cu
+A	task-1/src/matmul_f16/matmul_f16_v5_unroll.cu
+A	task-1/src/matmul_f16/matmul_f16_v6_streamk.cu
+A	task-1/src/matmul_f16/matmul_f16_v7_2launch.cu
+A	task-1/src/matmul_f16/matmul_f16_v8_straddle.cu
+A	task-1/src/matmul_f16/matmul_f16_v9_tune.cu

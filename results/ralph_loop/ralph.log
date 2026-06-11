@@ -1,0 +1,12 @@
+==== RALPH ITER 1 / 40  (全新 session,clean context;kernel 进度从磁盘续) ====
+---- iter 1 done: rc=0, 7178s, transcript=58f37889-1f6a-417c-b49a-d16329561569.jsonl ----
+==== RALPH ITER 2 / 40  (全新 session,clean context;kernel 进度从磁盘续) ====
+---- iter 2 done: rc=1, 5924s, transcript=25b7c1cd-dcac-4117-a64e-c5675facbd9c.jsonl ----
+==== RALPH ITER 3 / 40  (全新 session,clean context;kernel 进度从磁盘续) ====
+---- iter 3 done: rc=1, 8s, transcript=ad017762-4292-4f85-8507-9549c0cba14b.jsonl ----
+==== RALPH ITER 4 / 40  (全新 session,clean context;kernel 进度从磁盘续) ====
+---- iter 4 done: rc=1, 9s, transcript=d7b9bc44-e84a-4100-bf2c-856094da02d6.jsonl ----
+==== RALPH ITER 5 / 40  (全新 session,clean context;kernel 进度从磁盘续) ====
+---- iter 5 done: rc=1, 5s, transcript=03b02856-9dd0-47c3-8087-038fed7e3e22.jsonl ----
+⚠️ 连续 3 轮秒退(疑似 setup/auth 崩),停外循环。
+==== RALPH LOOP ended after 5 iters ====

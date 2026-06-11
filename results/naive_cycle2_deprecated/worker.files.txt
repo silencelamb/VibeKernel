@@ -1,0 +1,11 @@
+A  task-1/src/matmul_f16/matmul_f16_v10_pairbar.cu
+A  task-1/src/matmul_f16/matmul_f16_v11_branchless.cu
+A  task-1/src/matmul_f16/matmul_f16_v1_wmma.cu
+A  task-1/src/matmul_f16/matmul_f16_v2_mma.cu
+A  task-1/src/matmul_f16/matmul_f16_v3_prefetch.cu
+A  task-1/src/matmul_f16/matmul_f16_v4_smemepi.cu
+A  task-1/src/matmul_f16/matmul_f16_v5_precompaddr.cu
+A  task-1/src/matmul_f16/matmul_f16_v6_pipe.cu
+A  task-1/src/matmul_f16/matmul_f16_v7_distcp.cu
+A  task-1/src/matmul_f16/matmul_f16_v8_bk64.cu
+A  task-1/src/matmul_f16/matmul_f16_v9_l2persist.cu

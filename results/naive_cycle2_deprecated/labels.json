@@ -1,0 +1,10 @@
+{
+  "1": "wmma (44.7)",
+  "2": "mma.sync",
+  "3": "prefetch (195.8)",
+  "5": "precomp-addr (197.3)",
+  "6": "pipe (197.9)",
+  "8": "BK=64",
+  "9": "L2 persist (206.3 peak)",
+  "11": "branchless"
+}

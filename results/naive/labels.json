@@ -1,0 +1,13 @@
+{
+  "1":  "WMMA",
+  "2":  "cp.async pipe",
+  "3":  "mma.sync+ldmatrix",
+  "6":  "128x256·64x64 tile",
+  "7":  "256x128 tile",
+  "10": "BK=64",
+  "15": "4-stage",
+  "17": "rm volatile",
+  "19": "interleave cp.async",
+  "53": "BK=64 3-stage",
+  "56": "lessreg inline-addr"
+}

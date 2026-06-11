@@ -1,0 +1,10 @@
+{
+  "1":  "WMMA",
+  "2":  "mma.sync+cp.async",
+  "3":  "XOR swizzle",
+  "4":  "reg prefetch",
+  "6":  "64x64 tile",
+  "7":  "stages=4",
+  "8":  "template",
+  "11": "sweep"
+}

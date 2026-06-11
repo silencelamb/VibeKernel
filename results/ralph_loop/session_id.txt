@@ -1,0 +1,6 @@
+# Ralph Loop = each iteration is its OWN fresh session (no single session to --resume).
+# Substantive iterations (the other 3 were API-outage crash stubs, <10s):
+iter_01  58f37889-1f6a-417c-b49a-d16329561569   rc=0  ~7178s  clean self-stop
+iter_02  25b7c1cd-dcac-4117-a64e-c5675facbd9c   rc=1  ~5924s  crashed (ECONNRESET-class)
+# To RESUME the method: do NOT `claude --resume` one of these — re-run fresh sessions
+# over the kept worktree's accumulated kernel. See RESUME.md.

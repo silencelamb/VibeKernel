@@ -1,0 +1,11 @@
+{
+  "1": "wmma (baseline)",
+  "2": "cp.async",
+  "3": "mma.sync",
+  "4": "reg double-buffer",
+  "5": "swizzle",
+  "6": "f16-acc",
+  "7": "f16-acc occ",
+  "8": "epilogue",
+  "10": "f32 burst"
+}

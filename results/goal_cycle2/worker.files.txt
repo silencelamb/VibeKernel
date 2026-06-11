@@ -1,0 +1,8 @@
+A  task-1/src/matmul_f16/matmul_f16_v12_loadptr.cu
+A  task-1/src/matmul_f16/matmul_f16_v13_combo.cu
+A  task-1/src/matmul_f16/matmul_f16_v1_wmma.cu
+A  task-1/src/matmul_f16/matmul_f16_v20_ca.cu
+A  task-1/src/matmul_f16/matmul_f16_v26_epi.cu
+A  task-1/src/matmul_f16/matmul_f16_v4_multistage.cu
+A  task-1/src/matmul_f16/matmul_f16_v6_xstage.cu
+A  task-1/src/matmul_f16/matmul_f16_v7_bigtile.cu

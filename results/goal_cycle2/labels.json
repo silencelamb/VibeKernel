@@ -1,0 +1,10 @@
+{
+  "1": "wmma (baseline)",
+  "4": "multistage",
+  "6": "xstage pipe",
+  "7": "big tile",
+  "12": "loadptr",
+  "13": "combo",
+  "20": "cp.async.ca",
+  "26": "epilogue (peak)"
+}

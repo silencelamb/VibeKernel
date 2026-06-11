@@ -1,0 +1,13 @@
+{
+  "1": "wmma (baseline)",
+  "2": "mma.sync",
+  "3": "cp.async pipeline",
+  "4": "big tile 64x64",
+  "5": "register double-buffer",
+  "6": "BK=64",
+  "7": "ldmatrix.x4",
+  "9": "addr precompute",
+  "11": "tune",
+  "15": "coalesced epilogue",
+  "18": "barrier-free mbarrier (peak)"
+}

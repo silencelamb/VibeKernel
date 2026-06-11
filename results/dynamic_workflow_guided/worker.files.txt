@@ -1,0 +1,7 @@
+A  scripts/bench.sh
+A  scripts/gen_variant.sh
+A  task-1/src/matmul_f16/gemm_sm80.cuh
+A  task-1/src/matmul_f16/matmul_f16_v1.cu
+A  task-1/src/matmul_f16/matmul_f16_v10.cu
+A  task-1/src/matmul_f16/matmul_f16_v2.cu
+A  task-1/src/matmul_f16/matmul_f16_v3.cu

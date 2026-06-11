@@ -1,0 +1,34 @@
+# 本地环境（GPU pin），机器相关，不入库
+env.sh
+
+# 运行态原始记录(*.jsonl)+ pid + profiler 报告不入库;版本化 results/<方法>/ 下的摘要
+# (*.csv / *.md / *.png / *.json)、【kernel 产物快照 src/(+include/) + worker.patch】(由 finish_run.sh 写)。
+results/**/*.jsonl
+results/**/*.log
+results/**/*.pid
+results/**/*.ncu-rep
+results/**/*.nsys-rep
+results/*.log
+results/*.pid
+
+# Claude 项目配置：memory/ 与 settings.json 入库（随项目走）；本地 permissions 不入库
+.claude/settings.local.json
+# user-profile = 个人画像，本地保留、不公开（已 git rm --cached）
+.claude/memory/user-profile.md
+
+# 归档(results/naive_no_ncu、results/naive_ncu_cublas 等)：playground-naive 当普通文件入库。
+# build/(数十~百 M,可重建)一律不入库；logs/(小, result.md 引用的原始 TFLOPS 证据)用
+# `git add -f` 强制入库(否则被上面 results/**/*.log 吃掉)。
+results/**/build/
+
+# playground-base = 干净基座(silencelamb/playground-base)= 所有 worktree 的源,自己永不被改。
+# 现以 git submodule 形式纳入(见 .gitmodules),公开后别人 `--recurse-submodules` clone 即得基座。
+# 每次跑在 worktrees/<run-name>/(下面单独 ignore)开 worktree;跑完 finish_run.sh 归档 + 删 worktree(见 META §5)。
+
+# git worktree 每跑一个(独立 cwd-slug → transcript/memory 隔离);跑完 finish_run.sh 删,纯 scratch 不入库
+/worktrees/
+
+#blog/
+
+# private host notes (never publish)
+.claude/memory/_private-*

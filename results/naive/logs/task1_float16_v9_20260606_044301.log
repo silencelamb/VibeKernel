@@ -1,0 +1,7 @@
+Run started at: Sat Jun  6 04:43:01 UTC 2026
+FLOAT_TYPE: float16
+VERSION: 9
+======================================
+[Playground] Start Testing for GEMM Version 9 with DType float16 ...
+[Playground] Calculating Finished
+[Playground] Check failed at /home/daixu/code/github_code/VibeKernel/playground-naive-clean/task-1/include/playground/test_data.hpp:155 for "!::std::isinf(errSum)"

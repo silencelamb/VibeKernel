@@ -1,0 +1,21 @@
+{
+  "1":  {"t": "WMMA 基线 (126)", "b": "WMMA API 弱、无软件流水"},
+  "2":  {"t": "裸 mma.sync + cp.async 流水 (194)", "b": "关键跃迁 126→194"},
+  "8":  {"t": "smem 中转 epilogue (210.5)", "b": "合并写;埋 cp.async 竞态"},
+  "13": {"t": "prefetch champion (217.2)", "b": "epilogue 期预取下一 tile"},
+  "18": {"t": "mirror tile 256×128 (219.0)", "b": "改善 raster/L2 局部性"},
+  "19": {"t": "★cycle2 冠军 mirror+GW8 spread (219.5, fp32)", "b": "cycle2 自停点;自判残差=4.74-wave 尾波 ~5% 无经济解"},
+  "23": {"t": "★iter2 突破 wavesplit (225.5, 严格 3e-5)", "b": "in-kernel last-wave K-split 直接打 cycle2 declared-unsolvable 的尾波 → +6;一举越过 cuBLAS"},
+  "24": {"t": "split-path (227.3, 严格 3e-5)", "b": "严格 fp32 档峰值;= cuBLAS fp32 +4%"},
+  "26": {"t": "relax (226.6)", "b": "起放宽到 ~1e-4(仍≪0.02 门)"},
+  "27": {"t": "split-path cleanup champion (227.6)", "b": "iter2 落点;v30-37 系统探针全被它压住"},
+  "29": {"t": "consecutive helper tails (中性)", "b": "608.7 vs 608.1µs,留档"},
+  "33": {"t": "serpentine raster (227.4)", "b": "蛇形光栅,噪声内"},
+  "39": {"t": "spill-free warp-local epilogue (228.3)", "b": "无 spill 的 warp 本地 epilogue → 新冠军"},
+  "41": {"t": "early stage-0 prefetch (228.7)", "b": "acc 分相边界 + stage-0 最先预取 (+0.4)"},
+  "42": {"t": "★v42 冠军 reg-shuffle epilogue (229.1)", "b": "形状特化(编译期 tile/split,省12 reg)+寄存器 shuffle 转置 epilogue(零 smem/零 barrier,SHFL.BFLY→STG.128)+epilogue 内禁 syncwarp;5 样本均值 229.1=89.7% 真峰"},
+  "44": {"t": "L2 ping-pong (229.0, 中性)", "b": "跨轮 L2 复用,噪声内"},
+  "46": {"t": "stage-2 prewarm (中性偏负)", "b": "228.56×2"},
+  "47": {"t": "no-bar 探针(故意错)", "b": "砍 bar 只回收 1.3µs/波 → 余 3.7µs/波 = HMMA cadence"},
+  "48": {"t": "micro-bundle (负, 213)", "b": "pf1 后置 → STACK 120 再爆;边界顺序只有 v42 可行"}
+}

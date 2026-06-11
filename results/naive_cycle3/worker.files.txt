@@ -1,0 +1,3 @@
+A  task-1/src/matmul_f16/matmul_f16_v15_occ.cu
+A  task-1/src/matmul_f16/matmul_f16_v1_wmma.cu
+A  task-1/src/matmul_f16/matmul_f16_v3_mma.cu

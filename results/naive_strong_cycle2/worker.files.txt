@@ -1,0 +1,6 @@
+A  task-1/src/matmul_f16/matmul_f16_v10.cu
+A  task-1/src/matmul_f16/matmul_f16_v1_wmma.cu
+A  task-1/src/matmul_f16/matmul_f16_v2_cpasync.cu
+A  task-1/src/matmul_f16/matmul_f16_v3_mma.cu
+A  task-1/src/matmul_f16/matmul_f16_v4_pipe.cu
+A  task-1/src/matmul_f16/matmul_f16_v6.cu

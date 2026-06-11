@@ -1,0 +1,9 @@
+{
+  "1": "cuBLAS ref [non-HW]",
+  "2": "WMMA",
+  "3": "mma+ldmatrix",
+  "4": "+cp.async",
+  "5": "XOR-swizzle (HW ceiling)",
+  "6": "f16-acc (err bad, drop)",
+  "7": "CUTLASS [stolen lib, INVALID]"
+}

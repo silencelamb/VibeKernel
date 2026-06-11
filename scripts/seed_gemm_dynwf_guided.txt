@@ -1,0 +1,35 @@
+你是 CUDA kernel 专家。任务:为 NVIDIA A100 (SM80) 写一个高性能 fp16 GEMM kernel,最大化实测 TFLOPS,向 A100 fp16 理论峰值 312 TFLOPS 逼近,并报告达到的峰值百分比(% of 312)。正确性以 v0 为 ground truth,自写 kernel 从 v1 起。
+**纯手写,禁用任何现成 GEMM 库**:不准 link / include / 调用 cuBLAS / cuBLASLt / CUTLASS / CUTE / cuDNN 等现成 GEMM 实现,所有 kernel 必须手写。
+**NEVER STOP**:持续优化、细致 profiling(用 ncu 看真实指标定位瓶颈)、仔细分析与思考,绝不停下、不要问我,可以查找查看文档。
+
+## 关键约束 —— 搜索策略是规定死的,不许自行发挥
+贪心 / 孤立增量评估(forward greedy / hill-climbing:从空集出发、加一个优化、单独有用才保留)有一个已知的 "cooperative blindspot":只有组合在一起才有收益的优化,会因为单独施加时不够好而被逐个丢弃,于是永远发现不了。本任务的 workflow 必须在机制上让这种失败不可能发生:
+- 禁止使用 forward greedy / hill-climbing(空集出发、加一个、有用才留)。
+- 禁止用 standalone delta(孤立增量)判定任何优化。
+- 一个优化被拒绝,当且仅当:把它从完整全栈里移除后性能不掉 —— 绝不依据它的孤立贡献。
+
+## 规定的编排形态(用 Dynamic Workflow 编排,fan-out 子 agent 并行)
+Phase 1 —— 先把全栈搭满。构造一个一次性应用下列所有 ingredient 的 kernel(清单见下)。先过正确性 gate,再测性能。这是参照点。
+Phase 2 —— Leave-one-out 消融(backward elimination)。每个 ingredient fan out 一个 subagent;每个 agent 从完整全栈里精确移除该一个 ingredient 并重测。某 ingredient 的价值 = 它缺席时完整 kernel 掉的 TFLOPS。凡是移除会导致性能回退的 ingredient 一律保留 —— 哪怕这同一个 ingredient 单独添加时毫无价值。
+Phase 3 —— 显式测试下列假设的 synergy 组合,作为独立 variant,让那些只有一起才生效的组合被一起测量,绝不被拆开过滤掉。
+Phase 4 —— 所有 variant 按实测 TFLOPS 排序,产出最优 kernel。
+
+## Ingredient 清单(Phase 1 全部纳入,禁止预筛)
+- cp.async(global→shared 异步拷贝)
+- 多级 software pipeline(3–4 级 double / triple buffering)
+- shared-memory swizzling 消除 bank conflict
+- 128-bit 向量化 load(float4)带对齐
+- warp-level tiling + register blocking / tile shape 调优
+- ldmatrix 喂给 tensor-core MMA 路径
+
+## 已知 synergy 组(Phase 3 —— 一起测,绝不孤立测)
+- cp.async ⊗ 多级 pipeline:异步拷贝只有在有足够 pipeline 深度时才隐藏延迟,单缓冲下它单独施加是中性偏负的。
+- shared-mem swizzling ⊗ 其它一切:消 bank conflict 只在 kernel 变成 shared-memory 带宽瓶颈时才显现,occupancy / latency 受限时看不出来。
+- register blocking(更大 tile)⊗ double buffering:更大 tile 降 occupancy,必须靠 pipeline 把延迟藏掉,reuse 收益才落得了地。
+
+## 评测契约(对每个 variant 完全一致地施加)
+- 计时前先过正确性 gate:对照 v0 reference GEMM,fp16 容差,fail-closed —— 错误的 kernel 不计时。
+- 性能一律用 task1 计分口径:`./task1.sh run --float f16 --ver N`(固定 4096³、100 轮均值、sustained),所有 variant 用相同 M/N/K=4096³ 和相同 launch config。**不要报临时 sweep / best-of-N 的热峰值**(那会虚高)。
+
+## 输出
+每轮简报:当前 TFLOPS、Average Error、本轮做了什么、下一步试什么——然后立刻继续下一轮,不要停、不要问我。最终产出排序表:ingredient 集合 → TFLOPS → % of 312 peak。然后显式标出:哪些 ingredient 在 standalone 评估下本会被丢弃、却在 leave-one-out 里证明是 load-bearing 的(即只因这个搜索策略才被救回来的)。这份清单就是 cooperative blindspot 被克服的证据。

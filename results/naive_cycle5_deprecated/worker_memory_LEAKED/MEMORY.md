@@ -1,0 +1,3 @@
+- [a100-sustained-clock](a100-sustained-clock.md) — A100 runs 1155MHz sustained (not 1410); real fp16 peak ~256 TFLOPS
+- [fp16-gemm-design-findings](fp16-gemm-design-findings.md) — task-1 fp16 GEMM: winning config + what didn't work (prior best ~172 TFLOPS)
+- [gemm-f16-optimization-findings](gemm-f16-optimization-findings.md) — CURRENT BEST ~218 TFLOPS (f16-acc 2-block + cp.async burst + shared epilogue); f32 safe alt ~188

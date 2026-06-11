@@ -1,0 +1,12 @@
+{
+  "1": "wmma (baseline 60)",
+  "2": "mma.sync",
+  "3": "cp.async pipe",
+  "4": "big tile",
+  "5": "ldmatrix x4",
+  "6": "sw-pipeline (187)",
+  "7": "512 threads",
+  "9": "addr opt (192)",
+  "17": "epilogue opt (205.6)",
+  "21": "L2 persist (206.8 peak)"
+}

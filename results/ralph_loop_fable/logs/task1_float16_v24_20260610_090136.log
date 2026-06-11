@@ -1,0 +1,118 @@
+Run started at: Wed Jun 10 09:01:36 UTC 2026
+FLOAT_TYPE: float16
+VERSION: 24
+======================================
+[Playground] Start Testing for GEMM Version 24 with DType float16 ...
+[v24dbg] b000 own kdone=   -0.5 flag=    1.2 exit=    9.4
+[v24dbg] b001 own kdone=   -0.7 flag=    0.8 exit=    8.3
+[v24dbg] b002 own kdone=   -0.6 flag=    0.8 exit=    8.6
+[v24dbg] b003 own kdone=   -0.7 flag=    0.6 exit=    8.7
+[v24dbg] b004 own kdone=   -0.4 flag=    0.6 exit=    7.7
+[v24dbg] b005 own kdone=   -0.5 flag=    1.0 exit=    8.0
+[v24dbg] b006 own kdone=   -0.6 flag=    1.0 exit=    8.6
+[v24dbg] b007 own kdone=   -0.7 flag=    1.0 exit=    8.7
+[v24dbg] b008 own kdone=   -0.8 flag=    0.6 exit=    8.1
+[v24dbg] b009 own kdone=   -0.7 flag=    0.5 exit=    8.4
+[v24dbg] b010 own kdone=   -0.7 flag=    0.7 exit=    8.6
+[v24dbg] b011 own kdone=   -0.6 flag=    0.6 exit=    8.6
+[v24dbg] b012 own kdone=   -0.6 flag=    0.7 exit=    8.5
+[v24dbg] b013 own kdone=   -0.8 flag=    0.5 exit=    8.1
+[v24dbg] b014 own kdone=   -0.8 flag=    1.3 exit=    8.9
+[v24dbg] b015 own kdone=   -0.6 flag=    0.5 exit=    8.5
+[v24dbg] b016 own kdone=   -0.6 flag=    0.6 exit=    8.7
+[v24dbg] b017 own kdone=   -0.9 flag=    0.9 exit=    8.3
+[v24dbg] b018 own kdone=   -0.6 flag=    0.7 exit=    7.7
+[v24dbg] b019 own kdone=   -0.8 flag=    0.7 exit=    8.9
+[v24dbg] b020 own kdone=   -0.7 flag=    0.8 exit=    8.3
+[v24dbg] b021 own kdone=   -0.6 flag=    1.1 exit=    8.0
+[v24dbg] b022 own kdone=   -0.6 flag=    1.1 exit=    8.9
+[v24dbg] b023 own kdone=   -0.6 flag=    0.5 exit=    7.8
+[v24dbg] b024 own kdone=   -0.7 flag=    1.1 exit=    8.5
+[v24dbg] b025 own kdone=   -0.8 flag=    0.6 exit=    8.1
+[v24dbg] b026 own kdone=   -0.5 flag=    1.0 exit=    8.1
+[v24dbg] b027 own kdone=   -0.6 flag=    0.5 exit=    7.8
+[v24dbg] b028 own kdone=   -0.4 flag=    0.7 exit=    7.2
+[v24dbg] b029 own kdone=   -0.7 flag=    0.5 exit=    7.7
+[v24dbg] b030 own kdone=   -0.7 flag=    0.8 exit=    7.4
+[v24dbg] b031 own kdone=   -0.7 flag=    0.5 exit=    7.4
+[v24dbg] b032 own kdone=   -0.7 flag=    0.6 exit=    6.5
+[v24dbg] b033 own kdone=   -0.7 flag=    1.1 exit=    7.1
+[v24dbg] b034 own kdone=   -0.5 flag=    0.9 exit=    7.1
+[v24dbg] b035 own kdone=   -0.7 flag=    1.2 exit=    8.2
+[v24dbg] b036 own kdone=   -0.8 flag=    1.2 exit=    7.8
+[v24dbg] b037 own kdone=   -0.7 flag=    0.6 exit=    7.6
+[v24dbg] b038 own kdone=   -0.5 flag=    0.5 exit=    6.6
+[v24dbg] b039 own kdone=   -0.5 flag=    0.6 exit=    6.8
+[v24dbg] b040 own kdone=   -0.7 flag=    0.7 exit=    8.2
+[v24dbg] b041 own kdone=   -0.8 flag=    0.3 exit=    8.1
+[v24dbg] b042 own kdone=   -0.6 flag=    0.8 exit=    7.9
+[v24dbg] b043 own kdone=   -0.7 flag=    0.7 exit=    7.4
+[v24dbg] b044 own kdone=   -0.7 flag=    0.7 exit=    7.3
+[v24dbg] b045 own kdone=   -0.8 flag=    1.0 exit=    7.6
+[v24dbg] b046 own kdone=   -0.7 flag=    1.0 exit=    6.7
+[v24dbg] b047 own kdone=   -0.6 flag=    0.7 exit=    6.5
+[v24dbg] b048 own kdone=   -0.5 flag=    0.6 exit=    6.5
+[v24dbg] b049 own kdone=   -0.6 flag=    1.0 exit=    6.9
+[v24dbg] b050 own kdone=   -0.7 flag=    0.5 exit=    7.4
+[v24dbg] b051 own kdone=   -0.9 flag=    0.8 exit=    7.6
+[v24dbg] b052 own kdone=   -0.8 flag=    0.6 exit=    7.4
+[v24dbg] b053 own kdone=   -0.8 flag=    0.6 exit=    6.4
+[v24dbg] b054 own kdone=   -0.6 flag=    1.5 exit=    7.6
+[v24dbg] b055 own kdone=   -0.8 flag=    0.9 exit=    7.6
+[v24dbg] b056 own kdone=   -0.8 flag=    0.5 exit=    7.0
+[v24dbg] b057 own kdone=   -0.8 flag=    0.8 exit=    7.0
+[v24dbg] b058 own kdone=   -0.6 flag=   14.2 exit=   20.1
+[v24dbg] b059 own kdone=   -0.5 flag=    4.4 exit=   10.1
+[v24dbg] b060 own kdone=   -0.6 flag=    9.5 exit=   15.0
+[v24dbg] b061 own kdone=   -0.8 flag=    1.0 exit=    7.2
+[v24dbg] b062 own kdone=   -0.6 flag=    1.3 exit=    7.5
+[v24dbg] b063 own kdone=   -0.7 flag=    0.7 exit=    6.7
+[v24dbg] b064 own kdone=   -0.6 flag=    4.5 exit=   10.7
+[v24dbg] b065 own kdone=   -0.5 flag=   14.4 exit=   20.4
+[v24dbg] b066 own kdone=   -0.6 flag=    9.4 exit=   15.0
+[v24dbg] b067 own kdone=   -0.4 flag=    3.8 exit=   10.3
+[v24dbg] b068 own kdone=   -0.7 flag=    3.8 exit=    9.7
+[v24dbg] b069 own kdone=   -0.6 flag=    0.6 exit=    7.1
+[v24dbg] b070 own kdone=   -0.6 flag=    2.9 exit=    9.3
+[v24dbg] b071 own kdone=   -0.8 flag=    1.3 exit=    7.1
+[v24dbg] b072 own kdone=   -0.6 flag=   12.5 exit=   18.3
+[v24dbg] b073 own kdone=   -0.6 flag=   14.0 exit=   19.8
+[v24dbg] b074 own kdone=   -0.7 flag=    3.3 exit=    9.4
+[v24dbg] b075 own kdone=   -0.6 flag=    2.2 exit=    8.0
+[v24dbg] b076 own kdone=   -0.6 flag=    0.6 exit=    7.3
+[v24dbg] b077 own kdone=   -0.6 flag=    0.8 exit=    7.7
+[v24dbg] b078 own kdone=   -0.6 flag=    3.5 exit=    9.8
+[v24dbg] b079 own kdone=   -0.5 flag=   11.9 exit=   17.6
+[v24dbg] b080 hlp t0k=   31.1 t0r=   37.0 t1k=   64.0 t1r=   69.6 t2k=   96.5 t2r=  100.9 exit=  101.0
+[v24dbg] b081 hlp t0k=   32.0 t0r=   37.8 t1k=   65.2 t1r=   70.6 t2k=   97.5 t2r=  102.2 exit=  102.2
+[v24dbg] b082 hlp t0k=   31.6 t0r=   37.3 t1k=   64.2 t1r=   69.8 t2k=   96.9 t2r=  101.5 exit=  101.6
+[v24dbg] b083 hlp t0k=   31.5 t0r=   37.7 t1k=   64.6 t1r=   70.1 t2k=   97.4 t2r=  102.1 exit=  102.2
+[v24dbg] b084 hlp t0k=   31.4 t0r=   38.1 t1k=   65.3 t1r=   71.1 t2k=   98.2 t2r=  102.4 exit=  102.5
+[v24dbg] b085 hlp t0k=   31.1 t0r=   38.2 t1k=   65.4 t1r=   70.7 t2k=   97.8 t2r=  102.0 exit=  102.0
+[v24dbg] b086 hlp t0k=   31.3 t0r=   37.1 t1k=   64.4 t1r=   69.8 t2k=   97.2 t2r=  101.5 exit=  101.5
+[v24dbg] b087 hlp t0k=   31.0 t0r=   37.7 t1k=   64.7 t1r=   70.2 t2k=   97.2 t2r=  101.5 exit=  101.6
+[v24dbg] b088 hlp t0k=   31.2 t0r=   37.1 t1k=   64.3 t1r=   69.8 t2k=   97.2 t2r=  101.6 exit=  101.7
+[v24dbg] b089 hlp t0k=   31.7 t0r=   37.7 t1k=   65.0 t1r=   70.5 t2k=   97.8 t2r=  102.7 exit=  102.8
+[v24dbg] b090 hlp t0k=   31.4 t0r=   37.5 t1k=   65.0 t1r=   70.2 t2k=   97.5 t2r=  102.4 exit=  102.5
+[v24dbg] b091 hlp t0k=   31.3 t0r=   37.5 t1k=   64.5 t1r=   69.9 t2k=   97.0 t2r=  101.3 exit=  101.4
+[v24dbg] b092 hlp t0k=   31.4 t0r=   37.6 t1k=   64.6 t1r=   70.0 t2k=   97.2 t2r=  101.9 exit=  101.9
+[v24dbg] b093 hlp t0k=   31.3 t0r=   37.6 t1k=   64.5 t1r=   70.0 t2k=   97.1 t2r=  101.6 exit=  101.7
+[v24dbg] b094 hlp t0k=   31.4 t0r=   37.7 t1k=   65.0 t1r=   70.2 t2k=   97.5 t2r=  101.7 exit=  101.7
+[v24dbg] b095 hlp t0k=   32.2 t0r=   38.2 t1k=   65.5 t1r=   70.8 t2k=   98.0 t2r=  102.6 exit=  102.7
+[v24dbg] b096 hlp t0k=   31.4 t0r=   37.5 t1k=   65.0 t1r=   70.2 t2k=   97.5 t2r=  102.1 exit=  102.2
+[v24dbg] b097 hlp t0k=   31.5 t0r=   37.5 t1k=   64.5 t1r=   70.2 t2k=   97.8 t2r=  102.3 exit=  102.3
+[v24dbg] b098 hlp t0k=   31.0 t0r=   36.9 t1k=   63.9 t1r=   69.3 t2k=   96.6 t2r=  101.1 exit=  101.2
+[v24dbg] b099 hlp t0k=   31.2 t0r=   37.7 t1k=   64.9 t1r=   70.2 t2k=   97.7 t2r=  102.0 exit=  102.1
+[v24dbg] b100 hlp t0k=   31.9 t0r=   38.0 t1k=   65.3 t1r=   71.4 t2k=   98.4 t2r=  102.8 exit=  102.8
+[v24dbg] b101 hlp t0k=   31.1 t0r=   36.5 t1k=   64.0 t1r=   68.8 t2k=   96.1 t2r=  100.8 exit=  100.8
+[v24dbg] b102 hlp t0k=   30.8 t0r=   36.5 t1k=   63.5 t1r=   68.9 t2k=   96.4 t2r=  101.3 exit=  101.4
+[v24dbg] b103 hlp t0k=   31.3 t0r=   36.9 t1k=   64.2 t1r=   69.6 t2k=   96.7 t2r=  101.4 exit=  101.5
+[v24dbg] b104 hlp t0k=   31.2 t0r=   37.6 t1k=   64.6 t1r=   70.0 t2k=   -1.0 t2r=   -1.0 exit=   70.1
+[v24dbg] b105 hlp t0k=   31.2 t0r=   36.4 t1k=   63.4 t1r=   68.3 t2k=   -1.0 t2r=   -1.0 exit=   68.4
+[v24dbg] b106 hlp t0k=   31.4 t0r=   37.8 t1k=   65.1 t1r=   69.9 t2k=   -1.0 t2r=   -1.0 exit=   69.9
+[v24dbg] b107 hlp t0k=   31.3 t0r=   37.5 t1k=   64.5 t1r=   69.3 t2k=   -1.0 t2r=   -1.0 exit=   69.4
+[Playground] Calculating Finished
+[Playground] Result >>> TFLOPS: 219.12742379880672; Average Error: 4.0858806e-05
+======================================
+Run completed at: Wed Jun 10 09:01:39 UTC 2026
+Log saved to: logs/task1_float16_v24_20260610_090136.log

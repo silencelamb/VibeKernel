@@ -1,0 +1,8 @@
+{
+  "1":  {"t": "WMMA baseline (52)", "b": ""},
+  "5":  {"t": "XOR-swizzle + ldmatrix (156)", "b": ""},
+  "8":  {"t": "BK64 + ldmatrix.x4.trans (168, fp32 best)", "b": "fp32 级最高;转 f16 累加才破 168"},
+  "15": {"t": "f16-acc + 2-block + deep pipe (185 peak)", "b": "72% cycle 无可发射 warp,latency-bound;occupancy 锁 2blk/SM=25%(寄存器96+smem64KB)"},
+  "20": {"t": "variant (185)", "b": ""},
+  "26": {"t": "variant (regress)", "b": "mbarrier 试到底→ptxas 报错需 sm_90,A100 不支持"}
+}

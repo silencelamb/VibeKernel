@@ -1,0 +1,15 @@
+A  .claude/projects/-home-daixu-code-github-code-VibeKernel-playground-base/memory/MEMORY.md
+A  .claude/projects/-home-daixu-code-github-code-VibeKernel-playground-base/memory/gemm-f16-progress.md
+M  task-1/cmake/compilers/cuda-compiler-configs.cmake
+A  task-1/src/matmul_f16/matmul_f16_v10_f16acc.cu
+A  task-1/src/matmul_f16/matmul_f16_v11_split.cu
+A  task-1/src/matmul_f16/matmul_f16_v12_swizzle.cu
+A  task-1/src/matmul_f16/matmul_f16_v1_wmma.cu
+A  task-1/src/matmul_f16/matmul_f16_v2_mma.cu
+A  task-1/src/matmul_f16/matmul_f16_v3_pad.cu
+A  task-1/src/matmul_f16/matmul_f16_v4_pipeline.cu
+A  task-1/src/matmul_f16/matmul_f16_v5_swpipe.cu
+A  task-1/src/matmul_f16/matmul_f16_v6_warptile.cu
+A  task-1/src/matmul_f16/matmul_f16_v7_ldm.cu
+A  task-1/src/matmul_f16/matmul_f16_v8_sweep.cu
+A  task-1/src/matmul_f16/matmul_f16_v9_interleave.cu

@@ -1,0 +1,10 @@
+Run started at: Wed Jun 10 02:41:46 UTC 2026
+FLOAT_TYPE: float16
+VERSION: 5
+======================================
+[Playground] Start Testing for GEMM Version 5 with DType float16 ...
+[Playground] Calculating Finished
+[Playground] Result >>> TFLOPS: 59.738080407440286; Average Error: 3.2364722e-05
+======================================
+Run completed at: Wed Jun 10 02:41:49 UTC 2026
+Log saved to: logs/task1_float16_v5_20260610_024146.log

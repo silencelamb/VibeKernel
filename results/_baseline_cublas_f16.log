@@ -1,0 +1,192 @@
+=== Building with FLOAT=f16 VERSION=1 ===
+-- Running vcpkg install
+Detecting compiler hash for triplet x64-linux...
+Compiler found: /usr/bin/g++
+The following packages will be built and installed:
+  * cuda:x64-linux@10.1#13
+  * cudnn:x64-linux@7.6.5#17
+    cxxopts:x64-linux@3.3.1#1
+    nvidia-cutlass:x64-linux@4.4.2
+    openblas:x64-linux@0.3.33
+  * vcpkg-cmake:x64-linux@2024-04-23
+  * vcpkg-cmake-config:x64-linux@2024-05-23
+Additional packages (*) will be modified to complete this operation.
+Restored 0 package(s) from /root/.cache/vcpkg/archives in 19.7 us. Use --debug to see more details.
+Installing 1/7 vcpkg-cmake-config:x64-linux@2024-05-23...
+vcpkg-cmake-config:x64-linux@2024-05-23 package ABI: 94b5ea84c5c6d660eab242448776a067d7affd451a2ca6b1b0ea3ea4f7f104a3
+Building vcpkg-cmake-config:x64-linux@2024-05-23...
+-- Installing: /opt/vcpkg/packages/vcpkg-cmake-config_x64-linux/share/vcpkg-cmake-config/vcpkg_cmake_config_fixup.cmake
+-- Installing: /opt/vcpkg/packages/vcpkg-cmake-config_x64-linux/share/vcpkg-cmake-config/vcpkg-port-config.cmake
+-- Installing: /opt/vcpkg/packages/vcpkg-cmake-config_x64-linux/share/vcpkg-cmake-config/copyright
+-- Skipping post-build validation due to VCPKG_POLICY_EMPTY_PACKAGE
+Starting submission of vcpkg-cmake-config:x64-linux@2024-05-23 to 1 binary cache(s) in the background
+Elapsed time to handle vcpkg-cmake-config:x64-linux: 28.3 ms
+Installing 2/7 vcpkg-cmake:x64-linux@2024-04-23...
+vcpkg-cmake:x64-linux@2024-04-23 package ABI: 82732cafa54bcf299d1e6bd75d61ca4422b0d8c7173cca5cac5f8b5da212006f
+Building vcpkg-cmake:x64-linux@2024-04-23...
+-- Installing: /opt/vcpkg/packages/vcpkg-cmake_x64-linux/share/vcpkg-cmake/vcpkg_cmake_configure.cmake
+-- Installing: /opt/vcpkg/packages/vcpkg-cmake_x64-linux/share/vcpkg-cmake/vcpkg_cmake_build.cmake
+-- Installing: /opt/vcpkg/packages/vcpkg-cmake_x64-linux/share/vcpkg-cmake/vcpkg_cmake_install.cmake
+-- Installing: /opt/vcpkg/packages/vcpkg-cmake_x64-linux/share/vcpkg-cmake/vcpkg-port-config.cmake
+-- Installing: /opt/vcpkg/packages/vcpkg-cmake_x64-linux/share/vcpkg-cmake/copyright
+-- Performing post-build validation
+Starting submission of vcpkg-cmake:x64-linux@2024-04-23 to 1 binary cache(s) in the background
+Elapsed time to handle vcpkg-cmake:x64-linux: 23 ms
+Completed submission of vcpkg-cmake-config:x64-linux@2024-05-23 to 1 binary cache(s) in 11.6 ms
+Installing 3/7 cxxopts:x64-linux@3.3.1#1...
+cxxopts:x64-linux@3.3.1#1 package ABI: ea2429a12ec40fab1622f3d494ee7471bcae412913f5b71132f7880233ee269e
+Building cxxopts:x64-linux@3.3.1#1...
+Downloading https://github.com/jarro2783/cxxopts/archive/v3.3.1.tar.gz -> jarro2783-cxxopts-v3.3.1.tar.gz
+Successfully downloaded jarro2783-cxxopts-v3.3.1.tar.gz
+-- Extracting source /opt/vcpkg/downloads/jarro2783-cxxopts-v3.3.1.tar.gz
+-- Using source at /opt/vcpkg/buildtrees/cxxopts/src/v3.3.1-4f9ad96ab2.clean
+-- Configuring x64-linux
+-- Building x64-linux-rel
+-- Fixing pkgconfig file: /opt/vcpkg/packages/cxxopts_x64-linux/lib/pkgconfig/cxxopts.pc
+-- Installing: /opt/vcpkg/packages/cxxopts_x64-linux/share/cxxopts/copyright
+-- Performing post-build validation
+Starting submission of cxxopts:x64-linux@3.3.1#1 to 1 binary cache(s) in the background
+Elapsed time to handle cxxopts:x64-linux: 2.9 s
+Completed submission of vcpkg-cmake:x64-linux@2024-04-23 to 1 binary cache(s) in 8.47 ms
+Installing 4/7 cuda:x64-linux@10.1#13...
+cuda:x64-linux@10.1#13 package ABI: 56961a6699fb07229e1237d2ab1e47dbbc33a812fafd43a18a1fb3f5d9f1cf95
+Building cuda:x64-linux@10.1#13...
+-- Found CUDA V13.0.88
+-- Installing: /opt/vcpkg/packages/cuda_x64-linux/share/cuda/copyright
+-- Performing post-build validation
+Starting submission of cuda:x64-linux@10.1#13 to 1 binary cache(s) in the background
+Elapsed time to handle cuda:x64-linux: 28.2 ms
+Completed submission of cxxopts:x64-linux@3.3.1#1 to 1 binary cache(s) in 9.57 ms
+Installing 5/7 cudnn:x64-linux@7.6.5#17...
+cudnn:x64-linux@7.6.5#17 package ABI: 7dbfa18b1f3a33a7d75437a8c16a92a37f6bd27435c3c9dfe4688e4533c2d160
+Building cudnn:x64-linux@7.6.5#17...
+-- Found CUDA V13.0.88
+-- Found CUDNN: /usr/include/x86_64-linux-gnu
+-- Found CUDNN 9.14.0 located on system: (include /usr/include/x86_64-linux-gnu lib: /usr/lib/x86_64-linux-gnu/libcudnn.so)
+-- Installing: /opt/vcpkg/packages/cudnn_x64-linux/share/cudnn/FindCUDNN.cmake
+-- Installing: /opt/vcpkg/packages/cudnn_x64-linux/share/cudnn/usage
+-- Installing: /opt/vcpkg/packages/cudnn_x64-linux/share/cudnn/vcpkg-cmake-wrapper.cmake
+Downloading https://github.com/NixOS/patchelf/releases/download/0.15.5/patchelf-0.15.5-x86_64.tar.gz -> patchelf-0.15.5-x86_64.tar.gz
+Successfully downloaded patchelf-0.15.5-x86_64.tar.gz
+-- Skipping post-build validation due to VCPKG_POLICY_EMPTY_PACKAGE
+Starting submission of cudnn:x64-linux@7.6.5#17 to 1 binary cache(s) in the background
+Elapsed time to handle cudnn:x64-linux: 2.4 s
+Completed submission of cuda:x64-linux@10.1#13 to 1 binary cache(s) in 5.48 ms
+Installing 6/7 nvidia-cutlass:x64-linux@4.4.2...
+nvidia-cutlass:x64-linux@4.4.2 package ABI: f596448abc62a528bde9da3a61408e1e272a85dacc081e78d3b735466052420c
+Building nvidia-cutlass:x64-linux@4.4.2...
+Downloading https://github.com/NVIDIA/cutlass/archive/v4.4.2.tar.gz -> NVIDIA-cutlass-v4.4.2.tar.gz
+Successfully downloaded NVIDIA-cutlass-v4.4.2.tar.gz
+-- Extracting source /opt/vcpkg/downloads/NVIDIA-cutlass-v4.4.2.tar.gz
+-- Using source at /opt/vcpkg/buildtrees/nvidia-cutlass/src/v4.4.2-20a7a34482.clean
+-- Found CUDA V13.0.88
+-- Found CUDNN: /usr/include/x86_64-linux-gnu
+-- Configuring x64-linux
+-- Building x64-linux-dbg
+-- Building x64-linux-rel
+-- Installing: /opt/vcpkg/packages/nvidia-cutlass_x64-linux/share/nvidia-cutlass/copyright
+-- Performing post-build validation
+Starting submission of nvidia-cutlass:x64-linux@4.4.2 to 1 binary cache(s) in the background
+Elapsed time to handle nvidia-cutlass:x64-linux: 44 s
+Completed submission of cudnn:x64-linux@7.6.5#17 to 1 binary cache(s) in 7.44 ms
+Installing 7/7 openblas:x64-linux@0.3.33...
+openblas:x64-linux@0.3.33 package ABI: a46f4ac3a93da69f63badea355d8c89f8cace78b35cf5cf12477a59593eade2b
+Building openblas:x64-linux@0.3.33...
+Downloading https://github.com/OpenMathLib/OpenBLAS/archive/v0.3.33.tar.gz -> OpenMathLib-OpenBLAS-v0.3.33.tar.gz
+Successfully downloaded OpenMathLib-OpenBLAS-v0.3.33.tar.gz
+-- Extracting source /opt/vcpkg/downloads/OpenMathLib-OpenBLAS-v0.3.33.tar.gz
+-- Applying patch disable-testing.diff
+-- Applying patch getarch.diff
+-- Applying patch system-check-msvc.diff
+-- Applying patch win32-uwp.diff
+-- Applying patch android-exclude-sme.diff
+-- Using source at /opt/vcpkg/buildtrees/openblas/src/v0.3.33-03889469a6.clean
+-- OpenBLAS native build
+-- Configuring x64-linux
+-- Building x64-linux-dbg
+-- Building x64-linux-rel
+-- Fixing pkgconfig file: /opt/vcpkg/packages/openblas_x64-linux/lib/pkgconfig/openblas.pc
+-- Fixing pkgconfig file: /opt/vcpkg/packages/openblas_x64-linux/debug/lib/pkgconfig/openblas.pc
+-- Installing: /opt/vcpkg/packages/openblas_x64-linux/share/openblas/copyright
+-- Adjusted RPATH of '/opt/vcpkg/packages/openblas_x64-linux/manual-tools/openblas/Linux_x64/getarch' (From '' -> To '$ORIGIN:$ORIGIN/../../../lib')
+-- Adjusted RPATH of '/opt/vcpkg/packages/openblas_x64-linux/manual-tools/openblas/Linux_x64/getarch_2nd' (From '' -> To '$ORIGIN:$ORIGIN/../../../lib')
+-- Performing post-build validation
+Starting submission of openblas:x64-linux@0.3.33 to 1 binary cache(s) in the background
+Elapsed time to handle openblas:x64-linux: 33 s
+Installed contents are licensed to you by owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.
+Some packages did not declare an SPDX license. Check the `copyright` file for each package for more information about their licensing.
+Packages installed in this vcpkg installation declare the following licenses:
+BSD-3-Clause
+MIT
+cxxopts provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(cxxopts CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE cxxopts::cxxopts)
+
+nvidia-cutlass provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(NvidiaCutlass CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE nvidia::cutlass::cutlass nvidia::cutlass::tools::util)
+
+openblas provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(OpenBLAS CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE OpenBLAS::OpenBLAS)
+
+openblas provides pkg-config modules:
+
+  # OpenBLAS is an optimized BLAS library based on GotoBLAS2 1.13 BSD version
+  openblas
+
+Completed submission of nvidia-cutlass:x64-linux@4.4.2 to 1 binary cache(s) in 451 ms
+Waiting for 1 remaining binary cache submissions...
+Completed submission of openblas:x64-linux@0.3.33 to 1 binary cache(s) in 666 ms (1/1)
+All requested installations completed successfully in: 1.4 min
+-- Running vcpkg install - done
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/gcc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/g++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- [playground|INFO] >>> CMAKE_CXX_STANDARD: 20
+-- [playground|INFO] >>> CMAKE_CXX_SCAN_FOR_MODULES: OFF
+-- [playground|INFO] >>> STACK_SIZE: 1048576
+-- The CUDA compiler identification is NVIDIA 13.0.88 with host compiler GNU 13.3.0
+-- Detecting CUDA compiler ABI info
+-- Detecting CUDA compiler ABI info - done
+-- Check for working CUDA compiler: /usr/local/cuda/bin/nvcc - skipped
+-- Detecting CUDA compile features
+-- Detecting CUDA compile features - done
+-- [playground|INFO] >>> CMAKE_CUDA_STANDARD: 20
+-- Found CUDAToolkit: /usr/local/cuda/targets/x86_64-linux/include;/usr/local/cuda/targets/x86_64-linux/include/cccl (found version "13.0.88")
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- [playground|INFO] >>> Including source files for float16 version 1:
+-- [playground|INFO] >>>   CXX: /home/daixu/code/github_code/VibeKernel/playground-naive/task-1/src/main.cpp
+-- [playground|INFO] >>>   CXX: /home/daixu/code/github_code/VibeKernel/playground-naive/task-1/src/matmul_f16/matmul_f16_v0_cblas.cpp
+-- [playground|INFO] >>>   CUDA: /home/daixu/code/github_code/VibeKernel/playground-naive/task-1/src/matmul_f16/matmul_f16_v1_tensor-core.cu
+-- [playground|INFO] >>> Matmul Version: 1
+-- [playground|INFO] >>> Test Data Type: float16
+-- Configuring done (91.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/daixu/code/github_code/VibeKernel/playground-naive/build
+[1/5] Building CXX object src/CMakeFiles/task1.dir/matmul_f16/matmul_f16_v0_cblas.cpp.o
+[2/5] Building CUDA object src/CMakeFiles/task1.dir/matmul_f16/matmul_f16_v1_tensor-core.cu.o
+[3/5] Building CXX object src/CMakeFiles/task1.dir/main.cpp.o
+[4/5] Linking CXX executable src/CMakeFiles/task1.dir/cmake_device_link.o
+[5/5] Linking CXX executable src/task1_float16_v1
+=== Running task1_float16_v1 ===
+[Playground] Start Testing for GEMM Version 1 with DType float16 ...
+[Playground] Calculating Finished
+[Playground] Result >>> TFLOPS: 220.54975976793352; Average Error: 0.016791211

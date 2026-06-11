@@ -1,0 +1,6 @@
+==== RALPH RESUME: 已有 1 轮,从 iter 2 续到上限 11 ====
+==== RALPH ITER 2 / 11  (全新 session,clean context;kernel 进度从磁盘续) ====
+---- iter 2 done: rc=0, 3916s, transcript=28d6d9f3-457d-4d8c-8973-8d92b0c50136.jsonl ----
+==== RALPH ITER 3 / 11  (全新 session,clean context;kernel 进度从磁盘续) ====
+---- iter 3 done: rc=0, 5773s, transcript=26ff5b26-5a0b-44ff-815c-b2dfce7bef42.jsonl ----
+==== RALPH ITER 4 / 11  (全新 session,clean context;kernel 进度从磁盘续) ====

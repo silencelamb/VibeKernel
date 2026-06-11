@@ -1,0 +1,11 @@
+{
+  "1":  {"t": "WMMA baseline (70, f32)", "b": ""},
+  "2":  {"t": "cp.async 3-stage pipe (139)", "b": "70->139 翻倍,~45% peak"},
+  "3":  {"t": "mma.sync (142, f32 peak)", "b": "fp32 累加 ~142 封顶(warp 数少)"},
+  "4":  {"t": "64x64 warp tile, 256x128", "b": "mma/ldmatrix 比 2.7->4,藏延迟"},
+  "5":  {"t": "128x128 + register double-buf", "b": "double-buf 反伤(phase-lock 主导)"},
+  "6":  {"t": "config regression", "b": ""},
+  "13": {"t": "f16-acc turn (147)", "b": "转 f16 累加,err 跳 ~500x(0.018)"},
+  "15": {"t": "occupancy: 24-warp high-occ (154 peak)", "b": "高占用(24warp,f16)胜低占用完美流水;err~0.02;champion;同范式离库上限仍 ~30%"},
+  "19": {"t": "config variant", "b": ""}
+}

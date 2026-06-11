@@ -1,0 +1,15 @@
+{
+  "1":  {"t": "mma.m16n8k16 baseline (122, fp32-acc)", "b": "单 warp-tile,mma:ldmatrix 比低、延迟没藏住"},
+  "2":  {"t": "big CTA tile 128x256 (150)", "b": "smem 复用↑,但还无软件流水、global 延迟暴露"},
+  "3":  {"t": "cp.async 3-stage pipeline (193)", "b": "122→193 关键跃迁;fp32-acc warp 数受限封在 ~193"},
+  "4":  {"t": "warp-tile 64x64 + 调度 (201.8 fp32-acc peak)", "b": "fp32 累加封顶 ~202;再上需降精度(f16-acc)"},
+  "5":  {"t": "loop-unroll 实验 + 转 f16-acc (209)", "b": "按 STAGES 展开→REG255+STACK 溢出崩到 57;改 f16 累加 err 跳 ~500x(0.018)换回 209"},
+  "6":  {"t": "stream-K (191, 回退)", "b": "GPU 贪心调度已抹平 4.74-wave 尾;stream-K 任何变体 -3~-50"},
+  "7":  {"t": "dual-launch 双核 (207)", "b": "证实“尾部损失”多为幻觉;拆两个 kernel 没赚"},
+  "8":  {"t": "手动 barrier-straddle (194, 回退)", "b": "ptxas 已自动跨 barrier 调度;手搬 mma 反更慢(194<211)"},
+  "9":  {"t": "v9 全调优 champion (211.5, f16-acc)", "b": "82.7% of 1155-锁定真天花板 255.6;残差=k-step 交接 stall(首 B-LDSM+首 HMMA),需手写 SASS(环境无汇编器)"},
+  "10": {"t": "BK=32 x6-stage (回退)", "b": "-13;6 段 smem 压力、k-step 变多得不偿失"},
+  "11": {"t": "CUDA-graph launch (回退)", "b": "±0;launch 开销本就 ~1%,图化无收益"},
+  "12": {"t": "256x128 CUTLASS shape (199, 回退)", "b": "邻域 config 全更差(register/smem 墙)"},
+  "13": {"t": "v13 fp32-acc 保险版 (201.0, err 3.4e-5)", "b": "= v9 机器换 fp32 累加,-5% 性能换回精确精度;双交付的精确档"}
+}
